@@ -1,0 +1,19 @@
+.vscode/
+.idea/
+*~
+.DS_Store
+__MACOSX/
+
+# Node
+node_modules/
+package-lock.json
+
+# Build artifacts
+build/
+web-ext-artifacts/
+*.zip
+*.xpi
+
+# Test artifacts
+.test-profiles/
+*.log

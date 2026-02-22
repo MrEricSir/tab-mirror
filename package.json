@@ -1,0 +1,41 @@
+{
+  "name": "tab-mirror-extension",
+  "version": "0.1.0",
+  "description": "Firefox extension for mirroring tabs across multiple instances",
+  "scripts": {
+    "build": "node build.js",
+    "build:prod": "node build.js production",
+    "build:test": "node build.js test",
+    "clean": "rm -rf build web-ext-artifacts",
+    "server:test": "node test-server.js",
+    "test": "npm run build:test && node tests/run-all.js",
+    "test:basic": "npm run build:test && node tests/run-with-server.js tests/integration/basic-sync.test.js",
+    "test:ops": "npm run build:test && node tests/run-with-server.js tests/integration/tab-operations.test.js",
+    "test:groups": "npm run build:test && node tests/run-with-server.js tests/integration/initial-group-sync.test.js",
+    "test:window": "npm run build:test && node tests/run-with-server.js tests/integration/sync-window.test.js",
+    "test:multi": "npm run build:test && node tests/run-with-server.js tests/integration/multi-instance.test.js",
+    "test:stress": "npm run build:test && node tests/run-with-server.js tests/integration/stress.test.js",
+    "test:stale": "npm run build:test && node tests/run-with-server.js tests/integration/stale-peer.test.js",
+    "test:edge": "npm run build:test && node tests/run-with-server.js tests/integration/edge-cases.test.js",
+    "test:validation": "npm run build:test && node tests/run-with-server.js tests/integration/validation.test.js",
+    "test:connection": "npm run build:test && node tests/run-with-server.js tests/integration/connection-failure.test.js",
+    "test:connectivity": "npm run build:test && node tests/run-with-server.js tests/integration/connectivity.test.js",
+    "test:broadcast": "npm run build:test && node tests/run-with-server.js tests/integration/broadcast-retry.test.js",
+    "test:encryption": "npm run build:test && node tests/run-with-server.js tests/integration/encryption.test.js",
+    "test:concurrent": "npm run build:test && node tests/run-with-server.js tests/integration/concurrent-sync.test.js",
+    "test:blank": "npm run build:test && node tests/run-with-server.js tests/integration/blank-tab-merge.test.js",
+    "test:popup": "npm run build:test && node tests/run-with-server.js tests/integration/popup-ui.test.js",
+    "lint": "web-ext lint --source-dir=src",
+    "version:bump": "node bump-version.js"
+  },
+  "devDependencies": {
+    "geckodriver": "^4.0.0",
+    "peer": "^1.0.2",
+    "selenium-webdriver": "^4.16.0",
+    "selenium-webext-bridge": "^0.3.0",
+    "web-ext": "^8.10.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

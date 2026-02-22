@@ -1,0 +1,125 @@
+{
+  "extensionDescription": {
+    "message": "Mirrors your open tabs across devices via PeerJS"
+  },
+
+  "labelThisDevice": {
+    "message": "This Device:"
+  },
+  "labelEnabled": {
+    "message": "Enabled:"
+  },
+  "ariaEnableSync": {
+    "message": "Enable sync"
+  },
+
+  "buttonPairNewDevice": {
+    "message": "Pair New Device"
+  },
+  "buttonJoinDevice": {
+    "message": "Join Device"
+  },
+
+  "headerPairedDevices": {
+    "message": "Paired Devices"
+  },
+  "placeholderNoDevices": {
+    "message": "No paired devices"
+  },
+
+  "headerAdvanced": {
+    "message": "Advanced"
+  },
+  "buttonSyncNow": {
+    "message": "Sync Now"
+  },
+  "buttonResetConnection": {
+    "message": "Reset Connection"
+  },
+  "headerSyncHistory": {
+    "message": "Sync History"
+  },
+  "placeholderNoSyncEvents": {
+    "message": "No sync events yet"
+  },
+  "headerDebugInfo": {
+    "message": "Debug Info"
+  },
+  "placeholderLoading": {
+    "message": "Loading..."
+  },
+  "buttonCopyDebugInfo": {
+    "message": "Copy Debug Info"
+  },
+
+  "headerTestLogs": {
+    "message": "Test Logs"
+  },
+  "placeholderNoLogs": {
+    "message": "No logs available"
+  },
+  "buttonCopyLogs": {
+    "message": "Copy Logs"
+  },
+
+  "pairingGeneratingCode": {
+    "message": "Generating code..."
+  },
+  "pairingEnterCodeOnOther": {
+    "message": "Enter this code on the other device:"
+  },
+  "pairingWaitingForConnection": {
+    "message": "Waiting for connection..."
+  },
+  "pairingFailedToStart": {
+    "message": "Failed to start pairing"
+  },
+  "pairingEnterCodeFromOther": {
+    "message": "Enter the code from the other device:"
+  },
+  "buttonConnect": {
+    "message": "Connect"
+  },
+  "pairingEnterFullCode": {
+    "message": "Please enter the 8-character code"
+  },
+  "pairingConnecting": {
+    "message": "Connecting..."
+  },
+  "pairingSuccess": {
+    "message": "Paired successfully!"
+  },
+  "pairingExchangingKeys": {
+    "message": "Exchanging keys..."
+  },
+  "pairingTimedOut": {
+    "message": "Pairing timed out"
+  },
+  "pairingFailed": {
+    "message": "Pairing failed"
+  },
+
+  "buttonSyncing": {
+    "message": "Syncing..."
+  },
+  "buttonRefreshing": {
+    "message": "Refreshing..."
+  },
+  "buttonCopied": {
+    "message": "Copied!"
+  },
+
+  "buttonUnpair": {
+    "message": "Unpair"
+  },
+  "buttonCancel": {
+    "message": "Cancel"
+  },
+  "buttonBack": {
+    "message": "Back"
+  },
+
+  "syncNoChanges": {
+    "message": "no changes"
+  }
+}
