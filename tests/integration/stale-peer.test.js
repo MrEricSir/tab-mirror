@@ -210,15 +210,15 @@ async function main() {
     console.log('✅ Connected and synced');
 
     const tests = [
-      () => testStalePeerDetectedAndCleaned(browserA, browserB),
-      () => testPingPongKeepsAlive(browserA, browserB),
-      () => testReconnectionAfterStaleDetection(browserA, browserB),
-      () => testLastMessageTimesTracked(browserA, browserB),
+      testStalePeerDetectedAndCleaned,
+      testPingPongKeepsAlive,
+      testReconnectionAfterStaleDetection,
+      testLastMessageTimesTracked,
     ];
 
     for (const test of tests) {
       try {
-        await test();
+        await test(browserA, browserB);
       } catch (error) {
         results.error(test.name || 'Unknown Test', error);
       }

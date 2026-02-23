@@ -11,36 +11,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Setup Node.js
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: '18'
 
-    - name: Install Firefox and geckodriver
+    - name: Install Firefox
+      uses: browser-actions/setup-firefox@v1
+      with:
+        firefox-version: latest
+
+    - name: Install geckodriver
+      uses: browser-actions/setup-geckodriver@latest
+
+    - name: Verify Firefox and geckodriver
       run: |
-        sudo apt-get update
-        sudo apt-get install -y firefox
-        # Install geckodriver
-        wget https://github.com/mozilla/geckodriver/releases/download/v0.34.0/geckodriver-v0.34.0-linux64.tar.gz
-        tar -xvzf geckodriver-v0.34.0-linux64.tar.gz
-        sudo mv geckodriver /usr/local/bin/
-        sudo chmod +x /usr/local/bin/geckodriver
+        which firefox
+        firefox --version
+        which geckodriver
         geckodriver --version
 
     - name: Install dependencies
       run: npm install
 
-    - name: Run basic tests
+    - name: Run tests
       run: npm test
-
-    - name: Run integration tests
-      run: npm run test:integration
-
-    - name: Upload test results
-      if: failure()
-      uses: actions/upload-artifact@v3
-      with:
-        name: test-results
-        path: .test-profiles/
+      env:
+        HEADLESS: '1'

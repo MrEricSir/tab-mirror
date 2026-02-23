@@ -243,14 +243,14 @@ async function main() {
     console.log('✅ Connected and synced');
 
     const tests = [
-      () => testPrivateWindowExcluded(browserA, browserB),
-      () => testExtensionReloadPersistence(browserA, browserB),
-      () => testGroupNameConflicts(browserA, browserB),
+      testPrivateWindowExcluded,
+      testExtensionReloadPersistence,
+      testGroupNameConflicts,
     ];
 
     for (const test of tests) {
       try {
-        await test();
+        await test(browserA, browserB);
       } catch (error) {
         results.error(test.name || 'Unknown Test', error);
       }

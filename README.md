@@ -1,4 +1,4 @@
-# Tab Mirror
+# ![logo](https://raw.githubusercontent.com/MrEricSir/tab-mirror/refs/heads/main/src/icons/icon-light.svg) Tab Mirror
 ## Firefox Extension
 
 Synchronizes tabs across multiple Firefox instances via PeerJS.
@@ -101,13 +101,13 @@ tab-mirror/
 - [CHANGELOG.md](CHANGELOG.md) -- Version history
 - [tests/README.md](tests/README.md) -- Test infrastructure and helper API
 
-## Known Issues
+## Contributing
 
-TODO: Open these as GitHub Issues
+If you find any bugs, wish to request new features, etc. [please file them as issues.](https://github.com/MrEricSir/tab-mirror/issues)
 
-- **No mobile support**: Firefox for Android/iOS not supported (WebRTC limitations)
-- **Public server**: Default `0.peerjs.com` has reliability issues, users may wish to self-host
-- **Tab groups experimental**: Tab groups API is Firefox-specific and may change
+Pull requests are welcome, but please file an associated issue and reference it for tracking purposes.
+
+Translations are welcome! See [the English translation for an example.](https://github.com/MrEricSir/tab-mirror/blob/main/src/_locales/en/messages.json)
 
 ## License
 

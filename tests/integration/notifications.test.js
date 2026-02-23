@@ -145,15 +145,15 @@ async function main() {
     console.log('✅ Connected and synced');
 
     const tests = [
-      () => testNoNotificationForUnpairedPeer(browserA, browserB),
-      () => testNotificationOnPairedConnection(browserA, browserB),
-      () => testNoDuplicateNotificationOnReconnect(browserA, browserB),
-      () => testNotificationResetsAfterRestart(browserA, browserB),
+      testNoNotificationForUnpairedPeer,
+      testNotificationOnPairedConnection,
+      testNoDuplicateNotificationOnReconnect,
+      testNotificationResetsAfterRestart,
     ];
 
     for (const test of tests) {
       try {
-        await test();
+        await test(browserA, browserB);
       } catch (error) {
         results.error(test.name || 'Unknown Test', error);
       }

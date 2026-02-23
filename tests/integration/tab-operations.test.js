@@ -916,6 +916,12 @@ async function testUnpairRemovesDevice(browserA, browserB) {
   const devicesClean = await browserA.testBridge.getPairedDevices();
   await Assert.isTrue(!devicesClean.find(d => d.peerId === 'fake-peer-2'), 'fake-peer-2 should be removed');
 
+  // Restore connection — unpairDevice closes the PeerJS connection
+  await browserA.testBridge.simulateRestart();
+  await browserA.testBridge.waitForConnections(1, 15000);
+  await browserA.testBridge.waitForSyncComplete(10000);
+  await browserB.testBridge.waitForSyncComplete(10000);
+
   results.pass('Unpair Removes Device From Paired List');
 }
 
@@ -1074,6 +1080,10 @@ async function testGroupColorTitleSync(browserA, browserB) {
   await browserA.testBridge.groupTabs([gTab1.id], 'Renamed Title', 'red', gTab1.groupId);
   await sleep(1000);
 
+  // Force broadcast — tabGroups.onUpdated may not fire cross-extension
+  await browserA.testBridge.triggerSync();
+  await sleep(2000);
+
   // Renamed group should appear on B
   const renamedOnB = await browserB.testBridge.waitForGroupState('Renamed Title', true);
   console.log(`  B has Renamed Title: ${!!renamedOnB}, color: ${renamedOnB ? renamedOnB.color : 'N/A'}`);
@@ -1192,6 +1202,10 @@ async function testClosingLastTabInGroup(browserA, browserB) {
   await sleep(300);
   await browserA.testBridge.closeTab(t2.id);
   await sleep(1000);
+
+  // Force broadcast — tab events may not fire cross-extension on Linux
+  await browserA.testBridge.triggerSync();
+  await sleep(2000);
 
   // Group should disappear on B
   const doomedGone = await browserB.testBridge.waitForGroupState('Doomed Group', false);
@@ -1749,39 +1763,39 @@ async function main() {
 
     // Run tests -- each wrapped so one failure doesn't stop the suite
     const tests = [
-      () => testInitialSyncPreservesGroups(browserA, browserB),
-      () => testTabOrdering(browserA, browserB),
-      () => testTabPinning(browserA, browserB),
-      () => testTabGroupOperations(browserA, browserB),
-      () => testComplexTabOperations(browserA, browserB),
-      () => testOrderPersistenceAcrossChanges(browserA, browserB),
-      () => testGroupsSurviveReorder(browserA, browserB),
-      () => testGroupsSurviveReconnection(browserA, browserB),
-      () => testGroupsNotDuplicatedOnReconnect(browserA, browserB),
-      () => testReplaceLocalStateIdempotent(browserA, browserB),
-      () => testGroupsStableAcrossMultipleRestarts(browserA, browserB),
-      () => testPrivilegedTabOrdering(browserA, browserB),
-      () => testNavigateToPrivilegedUrl(browserA, browserB),
-      () => testUnpairRemovesDevice(browserA, browserB),
-      () => testGroupRemovalSync(browserA, browserB),
-      () => testSimultaneousGroupCreation(browserA, browserB),
-      () => testGroupColorTitleSync(browserA, browserB),
-      () => testRapidGroupOperations(browserA, browserB),
-      () => testPairingCancel(browserA, browserB),
-      () => testPairingStatusTransitions(browserA, browserB),
-      () => testInvalidPairingCode(browserA, browserB),
-      () => testMultiplePairedDevices(browserA, browserB),
-      () => testHMACCryptoFunctions(browserA, browserB),
-      () => testPairingFlow(browserA, browserB),
-      () => testPairedDeviceConnectionStatus(browserA, browserB),
-      () => testAuthSucceedsForPairedDevice(browserA, browserB),
-      () => testAuthRejectsUnpairedPeer(browserA, browserB),
-      () => testClosingLastTabInGroup(browserA, browserB),
+      testInitialSyncPreservesGroups,
+      testTabOrdering,
+      testTabPinning,
+      testTabGroupOperations,
+      testComplexTabOperations,
+      testOrderPersistenceAcrossChanges,
+      testGroupsSurviveReorder,
+      testGroupsSurviveReconnection,
+      testGroupsNotDuplicatedOnReconnect,
+      testReplaceLocalStateIdempotent,
+      testGroupsStableAcrossMultipleRestarts,
+      testPrivilegedTabOrdering,
+      testNavigateToPrivilegedUrl,
+      testUnpairRemovesDevice,
+      testGroupRemovalSync,
+      testSimultaneousGroupCreation,
+      testGroupColorTitleSync,
+      testRapidGroupOperations,
+      testPairingCancel,
+      testPairingStatusTransitions,
+      testInvalidPairingCode,
+      testMultiplePairedDevices,
+      testHMACCryptoFunctions,
+      testPairingFlow,
+      testPairedDeviceConnectionStatus,
+      testAuthSucceedsForPairedDevice,
+      testAuthRejectsUnpairedPeer,
+      testClosingLastTabInGroup,
     ];
 
     for (const test of tests) {
       try {
-        await test();
+        await test(browserA, browserB);
       } catch (error) {
         results.error(test.name || 'Unknown Test', error);
       }

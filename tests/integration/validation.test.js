@@ -376,20 +376,20 @@ async function main() {
     console.log('✅ Connected and synced');
 
     const tests = [
-      () => testSyncIdsUseCryptoFormat(browserA),
-      () => testSyncIdsSurviveSync(browserA, browserB),
-      () => testDuplicateSyncIdsDeduped(browserA),
-      () => testInvalidTabDataFiltered(browserA),
-      () => testInvalidGroupDataSanitized(browserA),
-      () => testMalformedGroupsObject(browserA),
-      () => testInvalidPeerIdRejected(browserA),
-      () => testStaleTabUpdateLogged(browserA),
-      () => testStaleTabRemovalLogged(browserA),
+      testSyncIdsUseCryptoFormat,
+      testSyncIdsSurviveSync,
+      testDuplicateSyncIdsDeduped,
+      testInvalidTabDataFiltered,
+      testInvalidGroupDataSanitized,
+      testMalformedGroupsObject,
+      testInvalidPeerIdRejected,
+      testStaleTabUpdateLogged,
+      testStaleTabRemovalLogged,
     ];
 
     for (const test of tests) {
       try {
-        await test();
+        await test(browserA, browserB);
       } catch (error) {
         results.error(test.name || 'Unknown Test', error);
       }

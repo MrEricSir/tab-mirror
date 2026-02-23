@@ -339,18 +339,18 @@ async function main() {
 
     // Run tests -- each wrapped so one failure doesn't stop the suite
     const tests = [
-      () => testConnectionEstablishment(browserA, browserB),
-      () => testTabCreationSync(browserA, browserB),
-      () => testTabClosingSync(browserA, browserB),
-      () => testTabNavigationSync(browserA, browserB),
-      () => testUrlChangeSync(browserA, browserB),
-      () => testReloadDuringSyncStability(browserA, browserB),
-      () => testTabMuteSync(browserA, browserB),
+      testConnectionEstablishment,
+      testTabCreationSync,
+      testTabClosingSync,
+      testTabNavigationSync,
+      testUrlChangeSync,
+      testReloadDuringSyncStability,
+      testTabMuteSync,
     ];
 
     for (const test of tests) {
       try {
-        await test();
+        await test(browserA, browserB);
       } catch (error) {
         results.error(test.name || 'Unknown Test', error);
       }

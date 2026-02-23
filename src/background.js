@@ -192,6 +192,7 @@ window.forceSync = () => {
     GROUP_ID_TO_SYNC_ID.clear();
     SYNC_ID_TO_GROUP_ID.clear();
     localGroupChanges.clear();
+    lastSeenGroupProps.clear();
     broadcastState();
 };
 

@@ -314,6 +314,7 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 GROUP_ID_TO_SYNC_ID.clear();
                 SYNC_ID_TO_GROUP_ID.clear();
                 localGroupChanges.clear();
+                lastSeenGroupProps.clear();
                 pendingSyncQueue = [];
                 syncHistory = [];
                 notifiedPeers.clear();
@@ -661,6 +662,7 @@ async function adoptSyncWindow(winId) {
     SYNC_ID_TO_TAB_ID.clear();
     GROUP_ID_TO_SYNC_ID.clear();
     SYNC_ID_TO_GROUP_ID.clear();
+    lastSeenGroupProps.clear();
     await captureLocalState();
     trigger(BROADCAST_DEBOUNCE_FAST_MS);
 }

@@ -174,15 +174,15 @@ async function main() {
     console.log('✅ Browsers launched');
 
     const tests = [
-      () => testConnectionCleanupAfterDisconnect(browserA, browserB),
-      () => testAutomaticReconnection(browserA, browserB),
-      () => testStateSyncsAfterReconnection(browserA, browserB),
-      () => testTabsDuringDisconnectionSyncAfterRecovery(browserA, browserB),
+      testConnectionCleanupAfterDisconnect,
+      testAutomaticReconnection,
+      testStateSyncsAfterReconnection,
+      testTabsDuringDisconnectionSyncAfterRecovery,
     ];
 
     for (const test of tests) {
       try {
-        await test();
+        await test(browserA, browserB);
       } catch (error) {
         results.error(test.name || 'Unknown Test', error);
       }

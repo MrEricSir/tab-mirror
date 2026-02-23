@@ -235,15 +235,15 @@ async function main() {
     console.log('✅ Initial sync complete');
 
     const tests = [
-      () => testFullMeshFormation(browsers),
-      () => testTabPropagationFromEachPeer(browsers),
-      () => testSimultaneousTabCreation(browsers),
-      () => testGroupSyncAcrossMesh(browsers),
+      testFullMeshFormation,
+      testTabPropagationFromEachPeer,
+      testSimultaneousTabCreation,
+      testGroupSyncAcrossMesh,
     ];
 
     for (const test of tests) {
       try {
-        await test();
+        await test(browsers);
       } catch (error) {
         results.error(test.name || 'Unknown Test', error);
       }

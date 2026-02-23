@@ -1,3 +1,8 @@
+// Tracks the last-seen title+color per group sync ID so captureLocalState() can
+// detect changes even when tabGroups.onUpdated doesn't fire (cross-extension
+// issue on Linux headless Firefox).
+const lastSeenGroupProps = new Map(); // gSyncId -> { title, color }
+
 // Capture Local State
 // Grabs all syncable tabs and groups from the sync window. Each tab and group
 // gets a stable sync ID if it doesn't have one yet. The result is the payload
@@ -24,9 +29,17 @@ async function captureLocalState() {
                 // Only keep groups that actually have tabs
                 const groupTabs = syncableTabs.filter(t => t.groupId === group.id);
                 if (groupTabs.length > 0) {
+                    const title = group.title || '';
+                    const color = group.color || 'grey';
+                    // Detect changes missed by tabGroups.onUpdated
+                    const prev = lastSeenGroupProps.get(gSyncId);
+                    if (prev && (prev.title !== title || prev.color !== color)) {
+                        localGroupChanges.set(gSyncId, Date.now());
+                    }
+                    lastSeenGroupProps.set(gSyncId, { title, color });
                     groupData[gSyncId] = {
-                        title: group.title || '',
-                        color: group.color || 'grey',
+                        title,
+                        color,
                         lastModified: localGroupChanges.get(gSyncId) || Date.now()
                     };
                 }
@@ -368,6 +381,7 @@ async function replaceLocalState(targetTabs, targetGroups = {}) {
     SYNC_ID_TO_TAB_ID.clear();
     GROUP_ID_TO_SYNC_ID.clear();
     SYNC_ID_TO_GROUP_ID.clear();
+    lastSeenGroupProps.clear();
 
     // Adopt existing tabs or create new ones
     const adoptedTabIds = await adoptOrCreateTabs(targetTabs, syncableTabs);
@@ -602,7 +616,9 @@ async function syncGroupsIncremental(remoteTabs, remoteGroups, prevState) {
                     }
                 }
 
-                // Update group properties if remote is newer
+                // Update group properties if remote is newer (by timestamp only).
+                // The sender bumps localGroupChanges via lastSeenGroupProps when
+                // actual values change, so timestamps are always fresh.
                 const groupInfo = remoteGroups[gSyncId];
                 const localTimestamp = localGroupChanges.get(gSyncId) || 0;
                 if (groupInfo.lastModified > localTimestamp) {

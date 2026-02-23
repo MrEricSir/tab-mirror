@@ -259,17 +259,17 @@ async function main() {
     // Run tests -- each wrapped so one failure doesn't stop the suite
     // Tests 5 & 6 must run last since they mutate A's state
     const tests = [
-      () => testSyncWindowSelectedAtBoot(browserA, browserB),
-      () => testSyncWindowIdExposedInState(browserA),
-      () => testTabsInSyncWindowSync(browserA, browserB),
-      () => testTabsInSecondWindowDontSync(browserA, browserB),
-      () => testClosingSyncWindowAdoptsFallback(browserA),
-      () => testAfterSyncWindowAdoptedTabsStillSync(browserA, browserB),
+      testSyncWindowSelectedAtBoot,
+      testSyncWindowIdExposedInState,
+      testTabsInSyncWindowSync,
+      testTabsInSecondWindowDontSync,
+      testClosingSyncWindowAdoptsFallback,
+      testAfterSyncWindowAdoptedTabsStillSync,
     ];
 
     for (const test of tests) {
       try {
-        await test();
+        await test(browserA, browserB);
       } catch (error) {
         results.error(test.name || 'Unknown Test', error);
       }
