@@ -58,16 +58,29 @@ async function waitForFullMesh(browsers) {
     }
   }
 
-  // Wait for synced peers
-  const syncDeadline = Date.now() + MESH_FORMATION_TIMEOUT;
+  // Nudge all browsers to broadcast state — helps stragglers that connected
+  // but haven't received a sync yet
+  for (const b of browsers) {
+    await b.testBridge.triggerSync();
+  }
+  await sleep(2000);
+
+  // Wait for synced peers — each browser gets its own fresh timeout
   for (let i = 0; i < count; i++) {
-    while (Date.now() < syncDeadline) {
+    const peerDeadline = Date.now() + MESH_FORMATION_TIMEOUT;
+    let synced = false;
+    while (Date.now() < peerDeadline) {
       const peers = await browsers[i].testBridge.getSyncedPeers();
       if (peers.length >= expectedPeers) {
+        synced = true;
         break;
       }
       console.log(`  Browser ${i + 1}: ${peers.length}/${expectedPeers} synced peers, waiting...`);
       await sleep(2000);
+    }
+    if (!synced) {
+      const peers = await browsers[i].testBridge.getSyncedPeers();
+      throw new Error(`Browser ${i + 1} has ${peers.length}/${expectedPeers} synced peers after timeout`);
     }
   }
 }
