@@ -33,7 +33,6 @@ async function addPairedDevice(peerId, sharedKey, name) {
 async function removePairedDevice(peerId) {
     pairedDevices = pairedDevices.filter(d => d.peerId !== peerId);
     await savePairedDevices();
-    authenticatedPeers.delete(peerId);
     // Close existing connection
     const conn = connections.get(peerId);
     if (conn) {
@@ -42,12 +41,10 @@ async function removePairedDevice(peerId) {
         } catch (e) {
             // conn might already be closed
         }
-        connections.delete(peerId);
-        knownPeers = Array.from(connections.keys());
     }
+    cleanupPeerConnection(peerId);
     syncedPeers.delete(peerId);
     lastKnownRemoteState.delete(peerId);
-    lastMessageTime.delete(peerId);
     encryptionKeyCache.delete(peerId);
     console.log(`[PAIR] Removed paired device: ${peerId}`);
 }
@@ -99,6 +96,14 @@ async function startPairing() {
                     conn.on('data', async (data) => {
                         if (data && data.type === 'PAIR_EXCHANGE_ACK') {
                             await addPairedDevice(data.peerId, sharedKey, data.name || data.peerId);
+                            // Adopt the window the user paired from as the sync window
+                            if (pairingState && pairingState.requestedSyncWindowId != null) {
+                                try {
+                                    await adoptSyncWindow(pairingState.requestedSyncWindowId);
+                                } catch (e) {
+                                    console.warn('[PAIR] Failed to adopt requested sync window:', e.message);
+                                }
+                            }
                             pairingState.status = 'success';
                             console.log(`[PAIR] Pairing complete with ${data.peerId}`);
                             // Clean up temp peer after short delay
@@ -171,6 +176,14 @@ async function joinPairing(code) {
             if (data && data.type === 'PAIR_EXCHANGE') {
                 const deviceName = await getDeviceName();
                 await addPairedDevice(data.peerId, data.sharedKey, data.name || data.peerId);
+                // Adopt the window the user paired from as the sync window
+                if (pairingState && pairingState.requestedSyncWindowId != null) {
+                    try {
+                        await adoptSyncWindow(pairingState.requestedSyncWindowId);
+                    } catch (e) {
+                        console.warn('[PAIR] Failed to adopt requested sync window:', e.message);
+                    }
+                }
                 conn.send({
                     type: 'PAIR_EXCHANGE_ACK',
                     peerId: myDeviceId,
@@ -241,6 +254,9 @@ function showPeerConnectedNotification(peerId) {
     notifiedPeers.add(peerId);
     const message = `Connected to ${device.name || peerId}`;
     notificationLog.push({ time: Date.now(), peerId, message });
+    if (notificationLog.length > MAX_NOTIFICATION_LOG) {
+        notificationLog.shift();
+    }
     browser.notifications.create(`peer-connected-${peerId}`, {
         type: 'basic',
         title: 'Tab Mirror',
@@ -293,19 +309,12 @@ function acceptConnection(conn) {
     conn.on('close', () => {
         console.log(`[P2P] Connection closed: ${conn.peer}`);
         fileLog(`Connection closed: ${conn.peer}`, 'P2P');
-        connections.delete(conn.peer);
-        authenticatedPeers.delete(conn.peer);
-        lastMessageTime.delete(conn.peer);
-        knownPeers = Array.from(connections.keys());
+        cleanupPeerConnection(conn.peer);
     });
 
     conn.on('error', (err) => {
         console.warn(`[P2P] Connection error with ${conn.peer}:`, err.type || err.message || err);
-        connections.delete(conn.peer);
-        pendingDials.delete(conn.peer);
-        authenticatedPeers.delete(conn.peer);
-        lastMessageTime.delete(conn.peer);
-        knownPeers = Array.from(connections.keys());
+        cleanupPeerConnection(conn.peer);
         const retry = connectionRetries.get(conn.peer) || { attempts: 0, lastAttempt: 0 };
         retry.attempts++;
         retry.lastAttempt = Date.now();

@@ -121,5 +121,18 @@
 
   "syncNoChanges": {
     "message": "no changes"
+  },
+
+  "bannerWrongWindow": {
+    "message": "Syncing from another window"
+  },
+  "bannerNoSyncWindow": {
+    "message": "Sync window was closed"
+  },
+  "buttonSwitchWindow": {
+    "message": "Switch to this window"
+  },
+  "buttonUseThisWindow": {
+    "message": "Use This Window"
   }
 }

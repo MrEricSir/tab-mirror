@@ -85,6 +85,7 @@ let pendingSyncQueue = [];        // Remote states queued up while we're busy pr
 let syncHistory = [];             // Last N sync events for debugging
 const MAX_SYNC_HISTORY = 50;
 let syncPaused = false;           // User toggle: pauses all sync, saved to storage
+let syncWindowChanged = false;    // Flagged as true in adoptSyncWindow, we clear it after broadcast
 let startTime = Date.now();
 let syncWindowId = null;
 
@@ -94,6 +95,15 @@ let pendingDials = new Set(); // Peer IDs currently being dialed
 let discoverInterval = null;
 let connectionRetries = new Map(); // peerId -> { attempts, lastAttempt } for backoff
 let localGroupChanges = new Map(); // gSyncId -> timestamp for group conflict resolution
+
+// Clears connection for a peer that's closed, timed out, or causing errors.
+function cleanupPeerConnection(peerId) {
+    connections.delete(peerId);
+    pendingDials.delete(peerId);
+    authenticatedPeers.delete(peerId);
+    lastMessageTime.delete(peerId);
+    knownPeers = Array.from(connections.keys());
+}
 
 // Last known remote state per peer, used for diff-based sync
 let lastKnownRemoteState = new Map(); // peerId -> Map<syncId, tabData>
@@ -106,6 +116,7 @@ let forceAuthNextConnection = false; // test-only: force authenticateConnection 
 let encryptionKeyCache = new Map();  // peerId -> CryptoKey (derived AES-256-GCM)
 let notifiedPeers = new Set();       // peers we've already shown a connection notification for
 let notificationLog = [];            // notification log for testing
+const MAX_NOTIFICATION_LOG = 50;
 
 // Tab/Group sync ID mappings
 let TAB_ID_TO_SYNC_ID = new Map();

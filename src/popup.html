@@ -363,10 +363,43 @@
     .toggle-switch input:checked + .toggle-slider::before {
       transform: translateX(16px);
     }
+
+    /* Sync Window Banners */
+    .sync-banner {
+      display: none;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      border: 1px solid var(--status-yellow);
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--status-yellow) 10%, var(--bg));
+      font-size: 12px;
+    }
+
+    .sync-banner p {
+      margin: 0 0 6px 0;
+      color: var(--text);
+    }
+
+    .sync-banner button {
+      margin: 0;
+      font-size: 11px;
+      padding: 6px 12px;
+      width: auto;
+    }
   </style>
 </head>
 <body>
   <div class="header">Tab Mirror</div>
+
+  <div class="sync-banner" id="wrongWindowBanner">
+    <p>__MSG_bannerWrongWindow__</p>
+    <button id="switchWindowBtn">__MSG_buttonSwitchWindow__</button>
+  </div>
+
+  <div class="sync-banner" id="noSyncWindowBanner">
+    <p>__MSG_bannerNoSyncWindow__</p>
+    <button id="useThisWindowBtn">__MSG_buttonUseThisWindow__</button>
+  </div>
 
   <div class="section">
     <span class="label">__MSG_labelThisDevice__</span>

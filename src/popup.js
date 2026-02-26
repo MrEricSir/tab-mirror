@@ -3,6 +3,8 @@
  */
 
 let pairingPollInterval = null;
+let popupWindowId = null;
+browser.windows.getCurrent().then(win => { popupWindowId = win.id; });
 
 function escapeHtml(str) {
     const div = document.createElement('div');
@@ -35,6 +37,33 @@ async function updateUI() {
             dot.style.color = "var(--status-yellow)";
         } else {
             dot.style.color = "var(--status-red)";
+        }
+
+        // Sync window banners
+        const wrongBanner = document.getElementById('wrongWindowBanner');
+        const noBanner = document.getElementById('noSyncWindowBanner');
+        const pairButtons = document.getElementById('pairButtons');
+
+        if (popupWindowId !== null) {
+            const isInSyncWindow = response.syncWindowId === popupWindowId;
+            const noSyncWindow = response.syncWindowId === null;
+
+            if (!noSyncWindow && !isInSyncWindow) {
+                // Different window has sync, show "wrong window" banner, hide pair buttons
+                wrongBanner.style.display = 'block';
+                noBanner.style.display = 'none';
+                pairButtons.style.display = 'none';
+            } else if (noSyncWindow && hasPaired) {
+                // Sync window was closed and we have paired devices
+                wrongBanner.style.display = 'none';
+                noBanner.style.display = 'block';
+                pairButtons.style.display = 'flex';
+            } else {
+                // Normal state in sync window or on fresh install
+                wrongBanner.style.display = 'none';
+                noBanner.style.display = 'none';
+                pairButtons.style.display = 'flex';
+            }
         }
 
         // Show/hide sections relevant to paired devices
@@ -230,7 +259,7 @@ function showPairMode() {
         </div>
     `;
 
-    browser.runtime.sendMessage({ action: "startPairing" }).then(response => {
+    browser.runtime.sendMessage({ action: "startPairing", windowId: popupWindowId }).then(response => {
         if (response && response.success) {
             pairingUI.innerHTML = `
                 <div class="pairing-ui">
@@ -328,7 +357,7 @@ async function submitJoinCode() {
     const btn = document.getElementById('joinConnectBtn');
     btn.disabled = true;
 
-    const response = await browser.runtime.sendMessage({ action: "joinPairing", code });
+    const response = await browser.runtime.sendMessage({ action: "joinPairing", code, windowId: popupWindowId });
 
     if (response && response.success) {
         startPairingPoll();
@@ -400,6 +429,16 @@ function cancelPairingUI() {
 
 document.getElementById('pairBtn').addEventListener('click', showPairMode);
 document.getElementById('joinBtn').addEventListener('click', showJoinMode);
+
+document.getElementById('switchWindowBtn').addEventListener('click', async () => {
+    await browser.runtime.sendMessage({ action: "adoptSyncWindowFromPopup", windowId: popupWindowId });
+    updateUI();
+});
+
+document.getElementById('useThisWindowBtn').addEventListener('click', async () => {
+    await browser.runtime.sendMessage({ action: "adoptSyncWindowFromPopup", windowId: popupWindowId });
+    updateUI();
+});
 
 document.getElementById('syncNowBtn').addEventListener('click', async () => {
     const btn = document.getElementById('syncNowBtn');

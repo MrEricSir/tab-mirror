@@ -193,6 +193,13 @@ class TabMirrorBridge extends TestBridge {
   }
 
   /**
+   * Switch the sync window to a different window ID (test-only)
+   */
+  async adoptSyncWindow(windowId) {
+    return await this._sendToTabMirror({ action: 'adoptSyncWindow', windowId });
+  }
+
+  /**
    * Get notification log (notifications fired this session)
    */
   async getNotificationLog() {

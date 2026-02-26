@@ -110,8 +110,14 @@ async function broadcastState() {
     broadcastInFlight = true;
     try {
         const state = await captureLocalState();
-        console.log(`[BROADCAST] ${state.tabs.length} tabs to ${connections.size} peer(s)`);
-        fileLog(`Broadcasting ${state.tabs.length} tabs`, 'BROADCAST');
+        // If the sync window just changed, flag the broadcast so peers
+        // reset to atomic merge instead of incremental diff.
+        if (syncWindowChanged) {
+            state.syncWindowChanged = true;
+            syncWindowChanged = false;
+        }
+        console.log(`[BROADCAST] ${state.tabs.length} tabs to ${connections.size} peer(s)${state.syncWindowChanged ? ' (window changed)' : ''}`);
+        fileLog(`Broadcasting ${state.tabs.length} tabs${state.syncWindowChanged ? ' (window changed)' : ''}`, 'BROADCAST');
 
         for (const [peerId, conn] of connections) {
             if (conn.open) {
@@ -131,10 +137,7 @@ async function broadcastState() {
                 } catch (e) {
                     console.warn(`[BROADCAST] Failed to send to ${peerId}, closing dead connection:`, e.message);
                     conn.close();
-                    connections.delete(peerId);
-                    authenticatedPeers.delete(peerId);
-                    lastMessageTime.delete(peerId);
-                    knownPeers = Array.from(connections.keys());
+                    cleanupPeerConnection(peerId);
                 }
             }
         }
@@ -746,6 +749,15 @@ async function processSyncData(remoteState) {
         return;
     }
     remoteState = validated;
+
+    // If the remote peer switched sync windows, reset our tracking for them
+    // so we fall into atomic merge instead of incremental diff.
+    if (remoteState.syncWindowChanged) {
+        console.log(`[SYNC] Peer ${remoteState.peerId} changed sync window - resetting to atomic merge`);
+        fileLog(`Peer ${remoteState.peerId} changed sync window`, 'SYNC');
+        lastKnownRemoteState.delete(remoteState.peerId);
+        syncedPeers.delete(remoteState.peerId);
+    }
 
     const hasBeenSynced = syncedPeers.has(remoteState.peerId);
     const hasPriorState = lastKnownRemoteState.has(remoteState.peerId);

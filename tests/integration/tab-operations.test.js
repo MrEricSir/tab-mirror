@@ -916,7 +916,7 @@ async function testUnpairRemovesDevice(browserA, browserB) {
   const devicesClean = await browserA.testBridge.getPairedDevices();
   await Assert.isTrue(!devicesClean.find(d => d.peerId === 'fake-peer-2'), 'fake-peer-2 should be removed');
 
-  // Restore connection — unpairDevice closes the PeerJS connection
+  // Restore connection, unpairDevice closes the PeerJS connection
   await browserA.testBridge.simulateRestart();
   await browserA.testBridge.waitForConnections(1, 15000);
   await browserA.testBridge.waitForSyncComplete(10000);
@@ -1080,7 +1080,7 @@ async function testGroupColorTitleSync(browserA, browserB) {
   await browserA.testBridge.groupTabs([gTab1.id], 'Renamed Title', 'red', gTab1.groupId);
   await sleep(1000);
 
-  // Force broadcast — tabGroups.onUpdated may not fire cross-extension
+  // Force broadcast; tabGroups.onUpdated may not fire cross-extension
   await browserA.testBridge.triggerSync();
   await sleep(2000);
 
@@ -1190,6 +1190,8 @@ async function testClosingLastTabInGroup(browserA, browserB) {
     throw error;
   }
   await sleep(1000);
+  await browserA.testBridge.waitForSyncComplete(10000);
+  await browserB.testBridge.waitForSyncComplete(10000);
 
   // Doomed Group should appear on B
   const doomedOnB = await browserB.testBridge.waitForGroupState('Doomed Group', true);
@@ -1203,7 +1205,7 @@ async function testClosingLastTabInGroup(browserA, browserB) {
   await browserA.testBridge.closeTab(t2.id);
   await sleep(1000);
 
-  // Force broadcast — tab events may not fire cross-extension on Linux
+  // Force broadcast: tab events may not fire cross-extension on Linux
   await browserA.testBridge.triggerSync();
   await sleep(2000);
 
