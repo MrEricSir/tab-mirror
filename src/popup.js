@@ -12,6 +12,26 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
+function formatRelativeTime(timestamp) {
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    if (seconds < 60) {
+        return 'just now';
+    }
+    
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) {
+        return `${minutes}m ago`;
+    }
+
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) {
+        return `${hours}h ago`;
+    }
+
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+}
+
 async function updateUI() {
     try {
         const response = await browser.runtime.sendMessage({ action: "getStatus" }).catch(() => {
@@ -39,6 +59,23 @@ async function updateUI() {
             dot.style.color = "var(--status-red)";
         }
 
+        // Sync status line
+        const syncStatusEl = document.getElementById('syncStatus');
+        if (response.pairedCount > 0) {
+            const parts = [];
+            if (response.tabCount > 0) {
+                parts.push(`${response.tabCount} tab${response.tabCount !== 1 ? 's' : ''}`);
+            }
+            if (response.isProcessingRemote) {
+                parts.push('Syncing\u2026');
+            } else if (response.lastSyncTime > 0) {
+                parts.push(`Last sync ${formatRelativeTime(response.lastSyncTime)}`);
+            }
+            syncStatusEl.textContent = parts.join(' \u00b7 ');
+        } else {
+            syncStatusEl.textContent = '';
+        }
+
         // Sync window banners
         const wrongBanner = document.getElementById('wrongWindowBanner');
         const noBanner = document.getElementById('noSyncWindowBanner');
@@ -49,10 +86,10 @@ async function updateUI() {
             const noSyncWindow = response.syncWindowId === null;
 
             if (!noSyncWindow && !isInSyncWindow) {
-                // Different window has sync, show "wrong window" banner, hide pair buttons
+                // Different window has sync, show "wrong window" banner
                 wrongBanner.style.display = 'block';
                 noBanner.style.display = 'none';
-                pairButtons.style.display = 'none';
+                pairButtons.style.display = 'flex';
             } else if (noSyncWindow && hasPaired) {
                 // Sync window was closed and we have paired devices
                 wrongBanner.style.display = 'none';

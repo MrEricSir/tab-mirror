@@ -264,6 +264,42 @@ function showPeerConnectedNotification(peerId) {
     });
 }
 
+function showPeerDisconnectedNotification(peerId) {
+    const device = pairedDevices.find(d => d.peerId === peerId);
+    if (!device) {
+        return;
+    }
+    const message = `Disconnected from ${device.name || peerId}`;
+    notificationLog.push({ time: Date.now(), peerId, message });
+    if (notificationLog.length > MAX_NOTIFICATION_LOG) {
+        notificationLog.shift();
+    }
+    // Remove from notifiedPeers so reconnection triggers new connect notification
+    notifiedPeers.delete(peerId);
+    browser.notifications.create(`peer-disconnected-${peerId}`, {
+        type: 'basic',
+        title: 'Tab Mirror',
+        message
+    });
+}
+
+function scheduleDisconnectNotification(peerId) {
+    cancelDisconnectNotification(peerId);
+    const timerId = setTimeout(() => {
+        pendingDisconnectTimers.delete(peerId);
+        showPeerDisconnectedNotification(peerId);
+    }, disconnectNotifyDelayMs);
+    pendingDisconnectTimers.set(peerId, timerId);
+}
+
+function cancelDisconnectNotification(peerId) {
+    const timerId = pendingDisconnectTimers.get(peerId);
+    if (timerId != null) {
+        clearTimeout(timerId);
+        pendingDisconnectTimers.delete(peerId);
+    }
+}
+
 function acceptConnection(conn) {
     console.log(`[P2P] Accepted connection: ${conn.peer}`);
     fileLog(`Accepted connection: ${conn.peer}`, 'P2P');
@@ -314,6 +350,7 @@ function acceptConnection(conn) {
         console.log(`[P2P] Connection closed: ${conn.peer}`);
         fileLog(`Connection closed: ${conn.peer}`, 'P2P');
         cleanupPeerConnection(conn.peer);
+        scheduleDisconnectNotification(conn.peer);
     });
 
     conn.on('error', (err) => {
@@ -328,6 +365,7 @@ function acceptConnection(conn) {
         connectionRetries.set(conn.peer, retry);
     });
 
+    cancelDisconnectNotification(conn.peer);
     showPeerConnectedNotification(conn.peer);
 
     // Send current state to new peer after short delay

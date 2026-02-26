@@ -117,6 +117,8 @@ let encryptionKeyCache = new Map();  // peerId -> CryptoKey (derived AES-256-GCM
 let notifiedPeers = new Set();       // peers we've already shown a connection notification for
 let notificationLog = [];            // notification log for testing
 const MAX_NOTIFICATION_LOG = 50;
+let pendingDisconnectTimers = new Map(); // peerId -> timeout ID for delayed disconnect notifications
+let disconnectNotifyDelayMs = 30000;
 
 // Tab/Group sync ID mappings
 let TAB_ID_TO_SYNC_ID = new Map();
