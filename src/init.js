@@ -269,6 +269,11 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 return { success: true, data: `Stale peer timeout set to ${message.timeout}ms` };
             }
 
+            case 'setDisconnectNotifyDelay': {
+                disconnectNotifyDelayMs = message.delay;
+                return { success: true, data: `Disconnect notify delay set to ${message.delay}ms` };
+            }
+
             case 'muteOutgoing': {
                 outgoingMuted = message.muted;
                 return { success: true, data: `Outgoing muted: ${outgoingMuted}` };
@@ -292,6 +297,7 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 if (dc) {
                     dc.close();
                     cleanupPeerConnection(message.peerId);
+                    scheduleDisconnectNotification(message.peerId);
                 }
                 return { success: true, data: { disconnected: !!dc } };
             }
@@ -355,6 +361,8 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 syncHistory = [];
                 notifiedPeers.clear();
                 notificationLog = [];
+                pendingDisconnectTimers.forEach(t => clearTimeout(t));
+                pendingDisconnectTimers.clear();
                 connections.forEach(conn => {
                     try {
                         conn.close();
@@ -375,6 +383,9 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                         // peer might already be gone
                     }
                 }
+                // Clear disconnect timers again: may have triggered new accidentally?
+                pendingDisconnectTimers.forEach(t => clearTimeout(t));
+                pendingDisconnectTimers.clear();
                 // Re-assign sync IDs to existing tabs and reconnect
                 await captureLocalState();
                 setupPeerJS();
@@ -404,7 +415,9 @@ browser.runtime.onMessage.addListener((message, sender) => {
             online: !!(window.peer && !window.peer.disconnected),
             lastSyncTime: lastRemoteSyncTime,
             syncPaused,
-            syncWindowId
+            syncWindowId,
+            tabCount: TAB_ID_TO_SYNC_ID.size,
+            isProcessingRemote
         });
     }
 
@@ -444,6 +457,8 @@ browser.runtime.onMessage.addListener((message, sender) => {
         syncHistory = [];
         notifiedPeers.clear();
         notificationLog = [];
+        pendingDisconnectTimers.forEach(t => clearTimeout(t));
+        pendingDisconnectTimers.clear();
         cancelPairing();
         TAB_ID_TO_SYNC_ID.clear();
         SYNC_ID_TO_TAB_ID.clear();
@@ -468,6 +483,9 @@ browser.runtime.onMessage.addListener((message, sender) => {
             }
             window.peer = null;
         }
+        // Clear disconnect timers again just to be extra safe.
+        pendingDisconnectTimers.forEach(t => clearTimeout(t));
+        pendingDisconnectTimers.clear();
         // Re-setup
         setupTransport();
         return Promise.resolve({ success: true });

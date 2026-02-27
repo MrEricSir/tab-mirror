@@ -2,11 +2,14 @@
 /**
  * Notification Tests
  *
- * Checks that notifications fire correctly when paired devices connect:
+ * Checks that notifications fire correctly when paired devices connect/disconnect:
  * - Paired device connection triggers a notification
  * - Unpaired device connection doesn't trigger one
  * - Duplicate notifications are suppressed on reconnect
  * - Notifications reset after simulated restart
+ * - Disconnect notification fires after delay
+ * - Quick reconnect cancels pending disconnect notification
+ * - Disconnect notification clears notifiedPeers so reconnect shows fresh notification
  */
 
 const { launchBrowser, cleanupBrowser, TestResults, Assert, sleep } = require('../helpers/test-helpers');
@@ -120,6 +123,147 @@ async function testNotificationResetsAfterRestart(browserA, browserB) {
   results.pass('Notification Resets After Restart');
 }
 
+async function testDisconnectNotificationAfterDelay(browserA, browserB) {
+  console.log();
+  console.log('Test: Disconnect Notification After Delay');
+
+  const stateB = await browserB.testBridge.getState();
+
+  // Use a very short delay (100ms) so the notification fires before
+  // auto-reconnect can cancel it (discovery runs every 3-5s)
+  await browserA.testBridge.setDisconnectNotifyDelay(100);
+
+  // Clear notification state with a restart so we start clean
+  console.log('  Simulating restart on A for clean state...');
+  await browserA.testBridge.simulateRestart();
+  await browserA.testBridge.setDisconnectNotifyDelay(100);
+  const reconnected = await browserA.testBridge.waitForConnections(1, 30000);
+  await Assert.isTrue(reconnected, 'A should reconnect');
+  await browserA.testBridge.waitForSyncComplete(10000);
+
+  const logBefore = await browserA.testBridge.getNotificationLog();
+  const connectCount = logBefore.log.length;
+  console.log(`  Notifications after reconnect: ${connectCount} (should have connect notification)`);
+  await Assert.isTrue(connectCount >= 1, 'Should have at least 1 connect notification');
+
+  // Disconnect A from B
+  console.log('  Disconnecting A from B...');
+  await browserA.testBridge.disconnectPeer(stateB.myDeviceId);
+
+  // Wait for the close event (async) + 100ms timer to fire
+  console.log('  Waiting for disconnect notification (100ms delay)...');
+  await sleep(1500);
+
+  const logAfter = await browserA.testBridge.getNotificationLog();
+  console.log(`  Notifications after disconnect: ${logAfter.log.length}`);
+
+  // Should have a disconnect notification now
+  const disconnectNotif = logAfter.log.find(n => n.message.includes('Disconnected from'));
+  await Assert.isTrue(!!disconnectNotif, 'Should have a "Disconnected from" notification');
+  console.log(`  Disconnect notification: "${disconnectNotif.message}"`);
+
+  // notifiedPeers clearing is verified in the "Enables Fresh Reconnect" test.
+  // We can't check it here because B may have already auto-reconnected,
+  // which re-adds the peer to notifiedPeers.
+
+  results.pass('Disconnect Notification After Delay');
+}
+
+async function testDisconnectNotificationCancelledByReconnect(browserA, browserB) {
+  console.log();
+  console.log('Test: Disconnect Notification Cancelled by Quick Reconnect');
+
+  const stateB = await browserB.testBridge.getState();
+
+  // Set a longer delay so we have time to reconnect before it fires
+  await browserA.testBridge.setDisconnectNotifyDelay(10000);
+
+  // Restart to get a clean notification state
+  console.log('  Simulating restart on A for clean state...');
+  await browserA.testBridge.simulateRestart();
+  await browserA.testBridge.setDisconnectNotifyDelay(10000);
+  const reconnected = await browserA.testBridge.waitForConnections(1, 30000);
+  await Assert.isTrue(reconnected, 'A should reconnect');
+  await browserA.testBridge.waitForSyncComplete(10000);
+
+  const logBefore = await browserA.testBridge.getNotificationLog();
+  const countBefore = logBefore.log.length;
+  console.log(`  Notifications before disconnect: ${countBefore}`);
+
+  // Disconnect
+  console.log('  Disconnecting A from B...');
+  await browserA.testBridge.disconnectPeer(stateB.myDeviceId);
+
+  // Wait briefly, then reconnect before the 10s timer fires
+  await sleep(2000);
+
+  // Reconnect by waiting for auto-reconnect
+  console.log('  Waiting for automatic reconnection...');
+  const reconnected2 = await browserA.testBridge.waitForConnections(1, 30000);
+  await Assert.isTrue(reconnected2, 'A should reconnect');
+
+  // Wait past when the original timer would have fired (10s from disconnect)
+  console.log('  Waiting past original timer window...');
+  await sleep(10000);
+
+  const logAfter = await browserA.testBridge.getNotificationLog();
+  const disconnectNotifs = logAfter.log.filter(n => n.message.includes('Disconnected from'));
+  console.log(`  Disconnect notifications after reconnect: ${disconnectNotifs.length}`);
+
+  await Assert.equal(disconnectNotifs.length, 0,
+    'Should NOT have disconnect notification (reconnect cancelled it)');
+
+  results.pass('Disconnect Notification Cancelled by Quick Reconnect');
+}
+
+async function testDisconnectNotificationEnablesReconnectNotification(browserA, browserB) {
+  console.log();
+  console.log('Test: Disconnect Notification Enables Fresh Reconnect Notification');
+
+  const stateB = await browserB.testBridge.getState();
+
+  // Use very short delay so disconnect notification fires before reconnect
+  await browserA.testBridge.setDisconnectNotifyDelay(100);
+
+  // Restart for clean state
+  console.log('  Simulating restart on A for clean state...');
+  await browserA.testBridge.simulateRestart();
+  await browserA.testBridge.setDisconnectNotifyDelay(100);
+  const reconnected = await browserA.testBridge.waitForConnections(1, 30000);
+  await Assert.isTrue(reconnected, 'A should reconnect');
+  await browserA.testBridge.waitForSyncComplete(10000);
+
+  const logAfterConnect = await browserA.testBridge.getNotificationLog();
+  const connectCount = logAfterConnect.log.filter(n => n.message.includes('Connected to')).length;
+  console.log(`  Connect notifications: ${connectCount}`);
+  await Assert.equal(connectCount, 1, 'Should have 1 connect notification');
+
+  // Disconnect and wait for disconnect notification (100ms + close event delay)
+  console.log('  Disconnecting and waiting for disconnect notification...');
+  await browserA.testBridge.disconnectPeer(stateB.myDeviceId);
+  await sleep(1500);
+
+  // Verify disconnect fired
+  const logAfterDisconnect = await browserA.testBridge.getNotificationLog();
+  const disconnectCount = logAfterDisconnect.log.filter(n => n.message.includes('Disconnected from')).length;
+  console.log(`  Disconnect notifications: ${disconnectCount}`);
+  await Assert.equal(disconnectCount, 1, 'Should have 1 disconnect notification');
+
+  // Now reconnect -- should produce a FRESH connect notification
+  // because showPeerDisconnectedNotification removed peer from notifiedPeers
+  console.log('  Waiting for reconnection...');
+  const reconnected2 = await browserA.testBridge.waitForConnections(1, 30000);
+  await Assert.isTrue(reconnected2, 'A should reconnect');
+  await browserA.testBridge.waitForSyncComplete(10000);
+
+  const logFinal = await browserA.testBridge.getNotificationLog();
+  const finalConnects = logFinal.log.filter(n => n.message.includes('Connected to')).length;
+  console.log(`  Connect notifications after re-connect: ${finalConnects}`);
+  await Assert.equal(finalConnects, 2, 'Should have 2 connect notifications (original + fresh after disconnect)');
+
+  results.pass('Disconnect Notification Enables Fresh Reconnect Notification');
+}
+
 async function main() {
   console.log('='.repeat(60));
   console.log('NOTIFICATION TESTS');
@@ -149,6 +293,9 @@ async function main() {
       testNotificationOnPairedConnection,
       testNoDuplicateNotificationOnReconnect,
       testNotificationResetsAfterRestart,
+      testDisconnectNotificationAfterDelay,
+      testDisconnectNotificationCancelledByReconnect,
+      testDisconnectNotificationEnablesReconnectNotification,
     ];
 
     for (const test of tests) {

@@ -31,6 +31,7 @@
     .header { font-weight: bold; font-size: 15px; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
     .section { margin-bottom: 8px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; min-height: 32px; }
     .label { font-weight: 600; color: var(--muted); }
+    .sync-status { font-size: 11px; color: var(--muted); text-align: right; margin: -4px 0 6px; }
 
     button {
       background: var(--accent); color: var(--accent-text); border: none; padding: 8px;
@@ -405,6 +406,7 @@
     <span class="label">__MSG_labelThisDevice__</span>
     <span><span id="statusDot" class="device-status">●</span> <span id="deviceName">...</span></span>
   </div>
+  <div class="sync-status" id="syncStatus"></div>
 
   <div class="section">
     <span class="label">__MSG_labelEnabled__</span>

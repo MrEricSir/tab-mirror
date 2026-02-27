@@ -3,7 +3,14 @@
  * Popup UI Tests
  *
  * Opens popup.html in a tab via moz-extension:// URL and checks
- * that the UI renders correctly and reflects extension state.
+ * that the UI renders correctly and reflects extension state:
+ * - Basic elements render (header, device name, sync toggle, pair buttons)
+ * - Status dot reflects connection state
+ * - Advanced section toggles and shows debug info
+ * - Sync history shows events
+ * - Sync status line shows tab count and last sync time when paired
+ * - Sync status line is empty when unpaired
+ * - Pair buttons visible from non-sync window
  */
 
 const { launchBrowser, cleanupBrowser, TestResults, Assert, sleep, generateTestUrl } = require('../helpers/test-helpers');
@@ -230,6 +237,126 @@ async function testPopupDebugInfoShowsPeer(browserA) {
     }
 }
 
+async function testPopupSyncStatusWithPairedDevice(browserA, browserB) {
+    console.log();
+    console.log('Test: Sync Status Line Shows Tab Count and Last Sync');
+    const { driver } = browserA;
+
+    // Pair A and B so the status line will render
+    const stateA = await browserA.testBridge.getState();
+    const stateB = await browserB.testBridge.getState();
+    await browserA.testBridge.addPairedDevice(stateB.myDeviceId, 'Status Test B');
+    await browserB.testBridge.addPairedDevice(stateA.myDeviceId, 'Status Test A');
+
+    // Restart to get a paired connection with sync activity
+    await browserA.testBridge.simulateRestart();
+    await browserA.testBridge.waitForConnections(1, 30000);
+    await browserA.testBridge.waitForSyncComplete(10000);
+
+    const { popupHandle, handlesBefore } = await openPopup(browserA);
+
+    try {
+        const statusText = await queryPopup(driver,
+            'return document.getElementById("syncStatus")?.textContent');
+        console.log(`  Sync status: "${statusText}"`);
+
+        // Should show tab count
+        await Assert.isTrue(statusText && /\d+ tabs?/.test(statusText),
+            `Sync status should show tab count, got "${statusText}"`);
+
+        // Should show last sync info (either "just now", "Xm ago", or "Syncing...")
+        await Assert.isTrue(
+            statusText.includes('Last sync') || statusText.includes('Syncing'),
+            `Sync status should show last sync time or syncing, got "${statusText}"`);
+
+        results.pass('Sync Status Line Shows Tab Count and Last Sync');
+    } finally {
+        await closePopup(driver, popupHandle, handlesBefore, browserA.testBridge);
+    }
+}
+
+async function testPopupSyncStatusEmptyWhenUnpaired(browserA) {
+    console.log();
+    console.log('Test: Sync Status Line Empty When Unpaired');
+    const { driver } = browserA;
+
+    // Unpair all devices so pairedCount = 0
+    const devices = await browserA.testBridge.getPairedDevices();
+    for (const d of devices) {
+        await browserA.testBridge.unpairDevice(d.peerId);
+    }
+
+    const { popupHandle, handlesBefore } = await openPopup(browserA);
+
+    try {
+        const statusText = await queryPopup(driver,
+            'return document.getElementById("syncStatus")?.textContent');
+        console.log(`  Sync status when unpaired: "${statusText}"`);
+
+        await Assert.isTrue(statusText === '' || statusText === null,
+            `Sync status should be empty when unpaired, got "${statusText}"`);
+
+        results.pass('Sync Status Line Empty When Unpaired');
+    } finally {
+        await closePopup(driver, popupHandle, handlesBefore, browserA.testBridge);
+    }
+}
+
+async function testPopupPairButtonsVisibleFromNonSyncWindow(browserA) {
+    console.log();
+    console.log('Test: Pair Buttons Visible From Non-Sync Window');
+    const { driver } = browserA;
+
+    // Add a fake paired device so the wrong-window banner logic triggers
+    await browserA.testBridge.addPairedDevice('fake-peer-for-buttons-test', 'Fake Device');
+
+    // Get current sync window
+    const syncWinId = await browserA.testBridge.getSyncWindowId();
+    console.log(`  Current sync window: ${syncWinId}`);
+
+    // Create a second window (this is NOT the sync window)
+    const newWin = await browserA.testBridge.createWindow('about:blank');
+    console.log(`  Created non-sync window: ${newWin.id}`);
+
+    // Open popup from the non-sync window by switching Selenium there first
+    const allHandles = await driver.getAllWindowHandles();
+    const lastHandle = allHandles[allHandles.length - 1];
+    await driver.switchTo().window(lastHandle);
+
+    const popupUrl = await browserA.testBridge.getPopupUrl();
+    await driver.switchTo().newWindow('tab');
+    const popupHandle = await driver.getWindowHandle();
+    await driver.get(popupUrl);
+    await sleep(2500);
+
+    try {
+        // Wrong window banner should be visible
+        const bannerDisplay = await queryPopup(driver,
+            'return getComputedStyle(document.getElementById("wrongWindowBanner")).display');
+        console.log(`  Wrong window banner display: ${bannerDisplay}`);
+        await Assert.isTrue(bannerDisplay === 'block',
+            `Wrong window banner should be visible, got "${bannerDisplay}"`);
+
+        // Pair buttons should STILL be visible (flex) even from non-sync window
+        const pairBtnDisplay = await queryPopup(driver,
+            'return getComputedStyle(document.getElementById("pairButtons")).display');
+        console.log(`  Pair buttons display: ${pairBtnDisplay}`);
+        await Assert.isTrue(pairBtnDisplay === 'flex',
+            `Pair buttons should be visible from non-sync window, got "${pairBtnDisplay}"`);
+
+        results.pass('Pair Buttons Visible From Non-Sync Window');
+    } finally {
+        // Close popup tab
+        await driver.switchTo().window(popupHandle);
+        await driver.close();
+        // Switch back to first handle and reset
+        await driver.switchTo().window(allHandles[0]);
+        await browserA.testBridge.reset();
+        // Clean up the fake device
+        await browserA.testBridge.unpairDevice('fake-peer-for-buttons-test');
+    }
+}
+
 // Main
 
 async function main() {
@@ -271,6 +398,15 @@ async function main() {
 
         try { await testPopupDebugInfoShowsPeer(browserA); }
         catch (e) { results.error('Debug Info Shows Connected Peer', e); }
+
+        try { await testPopupSyncStatusWithPairedDevice(browserA, browserB); }
+        catch (e) { results.error('Sync Status Line Shows Tab Count and Last Sync', e); }
+
+        try { await testPopupSyncStatusEmptyWhenUnpaired(browserA); }
+        catch (e) { results.error('Sync Status Line Empty When Unpaired', e); }
+
+        try { await testPopupPairButtonsVisibleFromNonSyncWindow(browserA); }
+        catch (e) { results.error('Pair Buttons Visible From Non-Sync Window', e); }
 
     } catch (error) {
         results.error('Test Suite', error);

@@ -124,6 +124,10 @@ class TabMirrorBridge extends TestBridge {
     return await this._sendToTabMirror({ action: 'setStalePeerTimeout', timeout });
   }
 
+  async setDisconnectNotifyDelay(delay) {
+    return await this._sendToTabMirror({ action: 'setDisconnectNotifyDelay', delay });
+  }
+
   async muteOutgoing(muted) {
     return await this._sendToTabMirror({ action: 'muteOutgoing', muted });
   }
