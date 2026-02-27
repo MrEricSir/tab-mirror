@@ -1190,6 +1190,8 @@ async function testClosingLastTabInGroup(browserA, browserB) {
     throw error;
   }
   await sleep(1000);
+  // Force a broadcast in case group events were debounced or dropped
+  await browserA.testBridge.triggerSync();
   await browserA.testBridge.waitForSyncComplete(10000);
   await browserB.testBridge.waitForSyncComplete(10000);
 
@@ -1638,6 +1640,13 @@ async function testAuthRejectsUnpairedPeer(browserA, browserB) {
   const reconnected = await browserA.testBridge.waitForConnections(1, 30000);
   console.log(`  Reconnected normally: ${reconnected}`);
   await Assert.isTrue(reconnected, 'Should eventually reconnect in normal mode');
+
+  // Wait for the post-reconnection atomic merge to complete.
+  // simulateRestart cleared lastKnownRemoteState, so reconnection triggers
+  // a full merge. If we don't wait, the next test's tab/group events may
+  // fire while isProcessingRemote is true and get silently dropped.
+  await browserA.testBridge.waitForSyncComplete(15000);
+  await browserB.testBridge.waitForSyncComplete(15000);
 
   results.pass('Auth Rejects Unpaired Peer');
 }

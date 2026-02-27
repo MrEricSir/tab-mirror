@@ -307,12 +307,19 @@ function acceptConnection(conn) {
     });
 
     conn.on('close', () => {
+        if (connections.get(conn.peer) !== conn) {
+            console.log(`[P2P] Stale connection closed (replaced): ${conn.peer}`);
+            return;
+        }
         console.log(`[P2P] Connection closed: ${conn.peer}`);
         fileLog(`Connection closed: ${conn.peer}`, 'P2P');
         cleanupPeerConnection(conn.peer);
     });
 
     conn.on('error', (err) => {
+        if (connections.get(conn.peer) !== conn) {
+            return; // Stale connection error, ignore
+        }
         console.warn(`[P2P] Connection error with ${conn.peer}:`, err.type || err.message || err);
         cleanupPeerConnection(conn.peer);
         const retry = connectionRetries.get(conn.peer) || { attempts: 0, lastAttempt: 0 };

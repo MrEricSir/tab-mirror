@@ -113,7 +113,9 @@ function handleConnection(conn) {
     // Handle errors before open (e.g. connection refused)
     conn.on('error', (err) => {
         console.warn(`[P2P] Connection error with ${conn.peer}:`, err.type || err.message || err);
-        cleanupPeerConnection(conn.peer);
+        if (connections.get(conn.peer) === conn) {
+            cleanupPeerConnection(conn.peer);
+        }
         const retry = connectionRetries.get(conn.peer) || { attempts: 0, lastAttempt: 0 };
         retry.attempts++;
         retry.lastAttempt = Date.now();
