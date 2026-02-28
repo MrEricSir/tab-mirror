@@ -274,6 +274,27 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 return { success: true, data: `Disconnect notify delay set to ${message.delay}ms` };
             }
 
+            case 'pauseDiscovery': {
+                if (discoverInterval) {
+                    clearInterval(discoverInterval);
+                    discoverInterval = null;
+                }
+                return { success: true, data: 'Discovery paused' };
+            }
+
+            case 'resumeDiscovery': {
+                if (!discoverInterval) {
+                    discoverPeers();
+                    discoverInterval = setInterval(discoverPeers, DISCOVER_INTERVAL_MS);
+                }
+                return { success: true, data: 'Discovery resumed' };
+            }
+
+            case 'setRedirectSuppressionWindow': {
+                redirectSuppressionMs = message.ms;
+                return { success: true, data: `Redirect suppression window set to ${message.ms}ms` };
+            }
+
             case 'muteOutgoing': {
                 outgoingMuted = message.muted;
                 return { success: true, data: `Outgoing muted: ${outgoingMuted}` };
@@ -357,6 +378,8 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 SYNC_ID_TO_GROUP_ID.clear();
                 localGroupChanges.clear();
                 lastSeenGroupProps.clear();
+                recentlySyncedUrls.clear();
+                syncUrlHistory.clear();
                 pendingSyncQueue = [];
                 syncHistory = [];
                 notifiedPeers.clear();
@@ -633,6 +656,24 @@ browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     }
     if (tab.windowId !== syncWindowId) {
         return;
+    }
+    // Redirect suppression: if sync recently applied a URL to this tab,
+    // suppress the outgoing broadcast so the redirect doesn't "bounce" back.
+    // Removed after a brief suppression window has elapsesd.
+    if (changeInfo.url) {
+        const sId = TAB_ID_TO_SYNC_ID.get(tabId);
+        if (sId) {
+            const recent = recentlySyncedUrls.get(sId);
+            if (recent) {
+                if ((Date.now() - recent.at) < redirectSuppressionMs) {
+                    console.log(`[TAB] Suppressing redirect sync-back for ${sId} (url: ${changeInfo.url})`);
+                    fileLog(`Suppressing redirect sync-back for ${sId}`, 'SYNC');
+                    return;
+                }
+                // Expired, clean up
+                recentlySyncedUrls.delete(sId);
+            }
+        }
     }
     if (changeInfo.url || changeInfo.pinned !== undefined || changeInfo.mutedInfo || changeInfo.groupId !== undefined) {
         console.log(`[TAB] Updated: ${tabId} ${changeInfo.url ? 'url=' + changeInfo.url : ''}`);

@@ -146,6 +146,9 @@ async function testDisconnectNotificationAfterDelay(browserA, browserB) {
   console.log(`  Notifications after reconnect: ${connectCount} (should have connect notification)`);
   await Assert.isTrue(connectCount >= 1, 'Should have at least 1 connect notification');
 
+  // Prevent race with notification timer.
+  await browserA.testBridge.pauseDiscovery();
+
   // Disconnect A from B
   console.log('  Disconnecting A from B...');
   await browserA.testBridge.disconnectPeer(stateB.myDeviceId);
@@ -161,6 +164,9 @@ async function testDisconnectNotificationAfterDelay(browserA, browserB) {
   const disconnectNotif = logAfter.log.find(n => n.message.includes('Disconnected from'));
   await Assert.isTrue(!!disconnectNotif, 'Should have a "Disconnected from" notification');
   console.log(`  Disconnect notification: "${disconnectNotif.message}"`);
+
+  // Resume discovery so subsequent tests can reconnect
+  await browserA.testBridge.resumeDiscovery();
 
   // notifiedPeers clearing is verified in the "Enables Fresh Reconnect" test.
   // We can't check it here because B may have already auto-reconnected,
@@ -238,6 +244,9 @@ async function testDisconnectNotificationEnablesReconnectNotification(browserA, 
   console.log(`  Connect notifications: ${connectCount}`);
   await Assert.equal(connectCount, 1, 'Should have 1 connect notification');
 
+  // Prevent race with notification timer.
+  await browserA.testBridge.pauseDiscovery();
+
   // Disconnect and wait for disconnect notification (100ms + close event delay)
   console.log('  Disconnecting and waiting for disconnect notification...');
   await browserA.testBridge.disconnectPeer(stateB.myDeviceId);
@@ -248,6 +257,9 @@ async function testDisconnectNotificationEnablesReconnectNotification(browserA, 
   const disconnectCount = logAfterDisconnect.log.filter(n => n.message.includes('Disconnected from')).length;
   console.log(`  Disconnect notifications: ${disconnectCount}`);
   await Assert.equal(disconnectCount, 1, 'Should have 1 disconnect notification');
+
+  // Resume discovery so reconnection can happen
+  await browserA.testBridge.resumeDiscovery();
 
   // Now reconnect -- should produce a FRESH connect notification
   // because showPeerDisconnectedNotification removed peer from notifiedPeers
