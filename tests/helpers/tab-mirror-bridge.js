@@ -128,6 +128,18 @@ class TabMirrorBridge extends TestBridge {
     return await this._sendToTabMirror({ action: 'setDisconnectNotifyDelay', delay });
   }
 
+  async pauseDiscovery() {
+    return await this._sendToTabMirror({ action: 'pauseDiscovery' });
+  }
+
+  async resumeDiscovery() {
+    return await this._sendToTabMirror({ action: 'resumeDiscovery' });
+  }
+
+  async setRedirectSuppressionWindow(ms) {
+    return await this._sendToTabMirror({ action: 'setRedirectSuppressionWindow', ms });
+  }
+
   async muteOutgoing(muted) {
     return await this._sendToTabMirror({ action: 'muteOutgoing', muted });
   }

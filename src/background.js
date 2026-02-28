@@ -120,6 +120,19 @@ const MAX_NOTIFICATION_LOG = 50;
 let pendingDisconnectTimers = new Map(); // peerId -> timeout ID for delayed disconnect notifications
 let disconnectNotifyDelayMs = 30000;
 
+// Redirect suppression
+// Tracks URLs recently applied by sync so that redirect-induced URL changes on the
+// receiver don't bounce back and get caught in a loop. This resolves the case where one
+// browser is logged in to a page and the other is not.
+let recentlySyncedUrls = new Map();  // syncId -> { url, at }
+let redirectSuppressionMs = 10000;    // 10s default
+
+// Bounce detection
+// Skip syncing URLs that were recently sent to the same tab.
+let syncUrlHistory = new Map();  // syncId -> { urls: string[], lastUpdated: number }
+const BOUNCE_DETECTION_WINDOW_MS = 30000;
+const BOUNCE_MAX_HISTORY = 5;
+
 // Tab/Group sync ID mappings
 let TAB_ID_TO_SYNC_ID = new Map();
 let SYNC_ID_TO_TAB_ID = new Map();

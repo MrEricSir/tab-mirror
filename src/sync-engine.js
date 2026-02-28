@@ -477,6 +477,8 @@ async function syncAddedAndUpdatedTabs(remoteTabs, prevState, prevSyncIds) {
                     }
                     TAB_ID_TO_SYNC_ID.set(newTab.id, rTab.sId);
                     SYNC_ID_TO_TAB_ID.set(rTab.sId, newTab.id);
+                    // Record for redirect suppression
+                    recentlySyncedUrls.set(rTab.sId, { url: rTab.url, at: Date.now() });
                     fileLog(`Created tab: ${rTab.url} (${rTab.sId})`, 'SYNC');
                     added++;
                 } catch (e) {
@@ -490,7 +492,14 @@ async function syncAddedAndUpdatedTabs(remoteTabs, prevState, prevSyncIds) {
             if (prevTab) {
                 const updates = {};
                 if (prevTab.url !== rTab.url && rTab.url !== 'about:blank') {
-                    updates.url = rTab.url;
+                    // Only update if the local tab doesn't already have this URL.
+                    // Without this check, when B echoes A's URL back, A would
+                    // redundantly record a recentlySyncedUrls entry that suppresses
+                    // subsequent user navigation on A.
+                    const localTab = localTabs.find(t => t.id === localTabId);
+                    if (!localTab || normalizeUrl(localTab.url) !== rTab.url) {
+                        updates.url = rTab.url;
+                    }
                 }
                 if (prevTab.pinned !== rTab.pinned) {
                     updates.pinned = rTab.pinned;
@@ -498,9 +507,30 @@ async function syncAddedAndUpdatedTabs(remoteTabs, prevState, prevSyncIds) {
                 if (prevTab.muted !== rTab.muted) {
                     updates.muted = rTab.muted;
                 }
+                // Bounce detection: Skip recently seen URLs for this tab.
+                if (updates.url) {
+                    const history = syncUrlHistory.get(rTab.sId);
+                    if (history && (Date.now() - history.lastUpdated) < BOUNCE_DETECTION_WINDOW_MS
+                        && history.urls.includes(updates.url)) {
+                        console.log(`[SYNC] Bounce detected for ${rTab.sId}, skipping URL ${updates.url}`);
+                        fileLog(`Bounce detected for ${rTab.sId}, skipping URL ${updates.url}`, 'SYNC');
+                        delete updates.url;
+                    }
+                }
                 if (Object.keys(updates).length > 0) {
                     try {
                         await browser.tabs.update(localTabId, updates);
+                        // Saves URLs for redirect/bounce prevention.
+                        if (updates.url) {
+                            recentlySyncedUrls.set(rTab.sId, { url: updates.url, at: Date.now() });
+                            const history = syncUrlHistory.get(rTab.sId) || { urls: [], lastUpdated: 0 };
+                            history.urls.push(updates.url);
+                            if (history.urls.length > BOUNCE_MAX_HISTORY) {
+                                history.urls.shift();
+                            }
+                            history.lastUpdated = Date.now();
+                            syncUrlHistory.set(rTab.sId, history);
+                        }
                         fileLog(`Updated tab: ${JSON.stringify(updates)} (${rTab.sId})`, 'SYNC');
                         updated++;
                     } catch (e) {
