@@ -1,5 +1,6 @@
 # ![logo](https://raw.githubusercontent.com/MrEricSir/tab-mirror/refs/heads/main/src/icons/icon-light.svg) Tab Mirror
 ## Firefox Extension
+[![Test Tab Mirror Extension](https://github.com/MrEricSir/tab-mirror/actions/workflows/test.yml/badge.svg)](https://github.com/MrEricSir/tab-mirror/actions/workflows/test.yml)
 
 Synchronizes tabs across multiple Firefox instances via PeerJS.
 
