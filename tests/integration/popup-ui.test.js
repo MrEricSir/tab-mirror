@@ -134,7 +134,7 @@ async function testPopupAdvancedSection(browserA) {
 
         // Click Advanced toggle
         await queryPopup(driver, 'document.getElementById("debugToggle").click()');
-        await sleep(500);
+        await sleep(200);
 
         // Debug content should be visible now
         const visibleAfter = await queryPopup(driver,

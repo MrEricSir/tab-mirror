@@ -27,7 +27,7 @@ async function testSyncIdsUseCryptoFormat(browserA) {
   for (let i = 0; i < 3; i++) {
     await browserA.testBridge.createTab(generateTestUrl(`crypto-id-${i}`));
   }
-  await sleep(2000);
+  await sleep(1000);
 
   const state = await browserA.testBridge.getState();
   const mappings = state.tabMappings.tabIdToSyncId; // [[tabId, syncId], ...]
@@ -54,7 +54,7 @@ async function testSyncIdsSurviveSync(browserA, browserB) {
 
   // Wait for the tabs we created above to propagate
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(3000);
+  await sleep(1000);
 
   const stateB = await browserB.testBridge.getState();
   const mappingsB = stateB.tabMappings.tabIdToSyncId;
@@ -96,7 +96,7 @@ async function testDuplicateSyncIdsDeduped(browserA) {
     groups: {}
   });
 
-  await sleep(3000);
+  await sleep(1500);
 
   const tabsAfter = await browserA.testBridge.getTabs();
   const dupTabs = tabsAfter.filter(t => t.url && t.url.includes('dup-'));
@@ -142,7 +142,7 @@ async function testInvalidTabDataFiltered(browserA) {
     groups: {}
   });
 
-  await sleep(3000);
+  await sleep(1500);
 
   const tabsAfter = await browserA.testBridge.getTabs();
   const validTab = tabsAfter.find(t => t.url && t.url.includes('valid-inject'));
@@ -179,7 +179,7 @@ async function testInvalidGroupDataSanitized(browserA) {
     }
   });
 
-  await sleep(3000);
+  await sleep(1500);
 
   // Extension should've sanitized color to 'grey' and truncated the title.
   // We can check logs for validation activity.
@@ -207,7 +207,7 @@ async function testMalformedGroupsObject(browserA) {
     groups: [1, 2, 3] // Array instead of object
   });
 
-  await sleep(3000);
+  await sleep(1500);
 
   // Shouldn't crash, and the valid tab should still be processed
   const tabsAfter = await browserA.testBridge.getTabs();
@@ -236,7 +236,7 @@ async function testInvalidPeerIdRejected(browserA) {
     groups: {}
   });
 
-  await sleep(2000);
+  await sleep(1000);
 
   const tabsAfter = await browserA.testBridge.getTabs();
   const badPeerTab = tabsAfter.find(t => t.url && t.url.includes('bad-peer'));
@@ -260,11 +260,11 @@ async function testStaleTabUpdateLogged(browserA) {
     ],
     groups: {}
   });
-  await sleep(2000);
+  await sleep(1000);
 
   // Point the mapping at a non-existent tab ID
   await browserA.testBridge.createStaleMapping('sid_stale_update_01', 999999);
-  await sleep(1000);
+  await sleep(500);
 
   // Second inject: incremental sync -- changed URL triggers update on stale mapping
   await browserA.testBridge.injectRemoteState({
@@ -276,7 +276,7 @@ async function testStaleTabUpdateLogged(browserA) {
     ],
     groups: {}
   });
-  await sleep(3000);
+  await sleep(1500);
 
   // Look for error log with specific sync ID
   const logs = await browserA.testBridge.getLogs();
@@ -290,7 +290,7 @@ async function testStaleTabUpdateLogged(browserA) {
 
   // Make sure extension still works after the error
   await browserA.testBridge.createTab(generateTestUrl('post-update-error'));
-  await sleep(1000);
+  await sleep(500);
   const tabs = await browserA.testBridge.getTabs();
   const postErrorTab = tabs.find(t => t.url && t.url.includes('post-update-error'));
   await Assert.isTrue(!!postErrorTab, 'Extension should still function after tab update error');
@@ -312,11 +312,11 @@ async function testStaleTabRemovalLogged(browserA) {
     ],
     groups: {}
   });
-  await sleep(2000);
+  await sleep(1000);
 
   // Point the mapping at a non-existent tab ID
   await browserA.testBridge.createStaleMapping('sid_stale_remove_01', 999998);
-  await sleep(1000);
+  await sleep(500);
 
   // Second inject: omit the stale tab -- triggers removal on stale mapping
   await browserA.testBridge.injectRemoteState({
@@ -327,7 +327,7 @@ async function testStaleTabRemovalLogged(browserA) {
     ],
     groups: {}
   });
-  await sleep(3000);
+  await sleep(1500);
 
   // Look for error log with specific sync ID
   const logs = await browserA.testBridge.getLogs();
@@ -341,7 +341,7 @@ async function testStaleTabRemovalLogged(browserA) {
 
   // Make sure extension still works after the error
   await browserA.testBridge.createTab(generateTestUrl('post-remove-error'));
-  await sleep(1000);
+  await sleep(500);
   const tabs = await browserA.testBridge.getTabs();
   const postErrorTab = tabs.find(t => t.url && t.url.includes('post-remove-error'));
   await Assert.isTrue(!!postErrorTab, 'Extension should still function after tab removal error');

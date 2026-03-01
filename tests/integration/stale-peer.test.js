@@ -43,7 +43,7 @@ async function testStalePeerDetectedAndCleaned(browserA, browserB) {
   // Check stale detection via logs. We use logs rather than connection
   // count because the discovery loop (3s in test mode) may reconnect
   // before we can observe 0 connections.
-  await sleep(500);
+  await sleep(200);
   const logs = await browserA.testBridge.getLogs();
   const hasStaleLog = logs.some(l => l.message && l.message.includes('Stale peer detected'));
   console.log(`  Stale peer log found: ${hasStaleLog}`);
@@ -76,13 +76,13 @@ async function testPingPongKeepsAlive(browserA, browserB) {
   await sleep(3000);
   console.log('  Running health check at t=3s (sends ping)...');
   await browserA.testBridge.runHealthCheck();
-  await sleep(1000); // Allow pong response
+  await sleep(500); // Allow pong response
 
   // At t=7s: run health check again -- should still be alive because pong refreshed timer
   await sleep(3000);
   console.log('  Running health check at t=7s...');
   await browserA.testBridge.runHealthCheck();
-  await sleep(500);
+  await sleep(200);
 
   // A should still be connected to B
   const connA = await browserA.testBridge.getConnectionCount();
@@ -111,7 +111,7 @@ async function testReconnectionAfterStaleDetection(browserA, browserB) {
   // Wait for timeout, then trigger health check to drop the connection
   await sleep(4000);
   await browserA.testBridge.runHealthCheck();
-  await sleep(1000);
+  await sleep(500);
 
   const connDropped = await browserA.testBridge.getConnectionCount();
   console.log(`  Connections after stale drop: ${connDropped}`);
@@ -132,12 +132,12 @@ async function testReconnectionAfterStaleDetection(browserA, browserB) {
   // Wait for sync to settle
   await browserA.testBridge.waitForSyncComplete(15000);
   await browserB.testBridge.waitForSyncComplete(15000);
-  await sleep(2000);
+  await sleep(1000);
 
   // Make sure sync still works: create tab on B, should appear on A
   const testUrl = generateTestUrl('post-stale-sync');
   await browserB.testBridge.createTab(testUrl);
-  await sleep(2000);
+  await sleep(1000);
   await browserA.testBridge.waitForSyncComplete(15000);
 
   const tabOnA = await browserA.testBridge.waitForTabUrl(testUrl, 20000);
@@ -167,10 +167,10 @@ async function testLastMessageTimesTracked(browserA, browserB) {
   await Assert.isTrue(timeBefore > 0, 'Last message time should be positive');
 
   // Wait, then create a tab on B (triggers sync data to A which updates the timestamp)
-  await sleep(2000);
+  await sleep(1000);
   const testUrl = generateTestUrl('timestamp-test');
   await browserB.testBridge.createTab(testUrl);
-  await sleep(3000);
+  await sleep(1500);
   await browserA.testBridge.waitForSyncComplete(10000);
 
   // Get times again -- B's timestamp should have increased

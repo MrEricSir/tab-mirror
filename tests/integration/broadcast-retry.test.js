@@ -135,7 +135,7 @@ async function testTabsDuringDisconnectionSyncAfterRecovery(browserA, browserB) 
   const url = generateTestUrl('during-disconnect');
   console.log(`  Creating tab on A while disconnected: ${url}`);
   await browserA.testBridge.createTab(url);
-  await sleep(1000);
+  await sleep(500);
 
   // Tab should exist on A but not on B yet
   const tabsADuring = await browserA.testBridge.getTabs();

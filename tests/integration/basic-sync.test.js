@@ -107,7 +107,7 @@ async function testTabClosingSync(browserA, browserB) {
   await browserA.testBridge.closeTab(tabToClose.id);
 
   // Let the close register
-  await sleep(2000);
+  await sleep(1000);
 
   const newCountA = (await browserA.testBridge.getTabs()).length;
   console.log(`  Browser A now has ${newCountA} tabs`);
@@ -141,7 +141,7 @@ async function testTabNavigationSync(browserA, browserB) {
   await browserA.testBridge.updateTab(activeTab.id, { url: uniqueUrl });
 
   // Let it load and register
-  await sleep(3000);
+  await sleep(1500);
 
   // Wait for sync on A
   console.log('  Waiting for sync on Browser A...');
@@ -192,7 +192,7 @@ async function testUrlChangeSync(browserA, browserB) {
   await Assert.isTrue(!!targetTab, 'Should find the tab to update');
   await browserA.testBridge.updateTab(targetTab.id, { url: newUrl });
 
-  await sleep(3000);
+  await sleep(1500);
 
   // Wait for updated URL to show up in B
   console.log('  Waiting for updated URL to appear in Browser B...');
@@ -235,10 +235,10 @@ async function testReloadDuringSyncStability(browserA, browserB) {
 
   // Reload fires onUpdated events which trigger sync. Let it settle,
   // then re-sync so dedup can run.
-  await sleep(5000);
+  await sleep(3000);
   await browserA.testBridge.waitForSyncComplete(15000);
   await browserA.testBridge.triggerSync();
-  await sleep(3000);
+  await sleep(1500);
   await browserA.testBridge.waitForSyncComplete(15000);
   await browserB.testBridge.waitForSyncComplete(15000);
 
@@ -290,10 +290,10 @@ async function testTabMuteSync(browserA, browserB) {
   // Mute tab on A
   console.log('  Muting tab on Browser A...');
   await browserA.testBridge.muteTab(tab.id);
-  await sleep(1000);
+  await sleep(500);
 
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(2000);
+  await sleep(500);
   await browserB.testBridge.waitForSyncComplete(10000);
 
   // Check B has the tab muted
@@ -306,10 +306,10 @@ async function testTabMuteSync(browserA, browserB) {
   // Unmute tab on A
   console.log('  Unmuting tab on Browser A...');
   await browserA.testBridge.unmuteTab(tab.id);
-  await sleep(1000);
+  await sleep(500);
 
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(2000);
+  await sleep(500);
   await browserB.testBridge.waitForSyncComplete(10000);
 
   // Check B has the tab unmuted

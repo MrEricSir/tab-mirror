@@ -41,7 +41,7 @@ async function testSwitchWindowMergesTabs(browserA, browserB) {
   await browserA.testBridge.createTab(url1);
   await browserA.testBridge.createTab(url2);
 
-  await sleep(2000);
+  await sleep(1000);
   await browserA.testBridge.waitForSyncComplete(10000);
 
   // Wait for both tabs to appear on B
@@ -60,19 +60,19 @@ async function testSwitchWindowMergesTabs(browserA, browserB) {
   console.log(`  Creating second window on A with: ${url3}`);
   const newWindow = await browserA.testBridge.createWindow(url3);
   console.log(`  New window ID: ${newWindow.id}`);
-  await sleep(2000);
+  await sleep(1000);
 
   // Switch sync to the new window
   console.log(`  Switching sync window from ${originalSyncWindowId} to ${newWindow.id}...`);
   await browserA.testBridge.adoptSyncWindow(newWindow.id);
 
   // Wait for sync to propagate
-  await sleep(3000);
+  await sleep(1500);
   await browserA.testBridge.waitForSyncComplete(10000);
   await browserB.testBridge.waitForSyncComplete(10000);
 
   // Extra time for sync to settle
-  await sleep(5000);
+  await sleep(2000);
 
   // Check B's tabs -- should have ALL tabs (original + new window)
   const tabsBAfter = await browserB.testBridge.getTabs();
@@ -100,7 +100,7 @@ async function testSwitchWindowMergesTabs(browserA, browserB) {
   } catch (e) {
     // may fail during cleanup
   }
-  await sleep(1000);
+  await sleep(500);
 
   results.pass('Switching Sync Window Merges Tabs on Peer');
 }
@@ -122,7 +122,7 @@ async function testSwitchBackNoDuplicates(browserA, browserB) {
   const url1 = generateTestUrl('nodup-original');
   await browserA.testBridge.createTab(url1);
 
-  await sleep(2000);
+  await sleep(1000);
   await browserA.testBridge.waitForSyncComplete(10000);
   await browserB.testBridge.waitForTabUrl('nodup-original', 20000);
 
@@ -135,20 +135,20 @@ async function testSwitchBackNoDuplicates(browserA, browserB) {
   // Open second window, switch to it, then switch back
   const newWindow = await browserA.testBridge.createWindow(generateTestUrl('nodup-detour'));
   console.log(`  Created detour window: ${newWindow.id}`);
-  await sleep(1000);
+  await sleep(500);
 
   console.log(`  Switching to detour window...`);
   await browserA.testBridge.adoptSyncWindow(newWindow.id);
-  await sleep(3000);
+  await sleep(1500);
   await browserA.testBridge.waitForSyncComplete(10000);
   await browserB.testBridge.waitForSyncComplete(10000);
 
   console.log(`  Switching back to original window ${originalSyncWindowId}...`);
   await browserA.testBridge.adoptSyncWindow(originalSyncWindowId);
-  await sleep(3000);
+  await sleep(1500);
   await browserA.testBridge.waitForSyncComplete(10000);
   await browserB.testBridge.waitForSyncComplete(10000);
-  await sleep(5000);
+  await sleep(2000);
 
   // B should still have exactly 1 copy of nodup-original, not 2
   tabsB = await browserB.testBridge.getTabs();
@@ -163,7 +163,7 @@ async function testSwitchBackNoDuplicates(browserA, browserB) {
   } catch (e) {
     // may fail
   }
-  await sleep(1000);
+  await sleep(500);
 
   results.pass('Switching Back to Original Window No Duplicates');
 }
@@ -187,7 +187,7 @@ async function testMultipleTabsBothWindowsMerge(browserA, browserB) {
   await browserA.testBridge.createTab(syncUrl1);
   await browserA.testBridge.createTab(syncUrl2);
 
-  await sleep(2000);
+  await sleep(1000);
   await browserA.testBridge.waitForSyncComplete(10000);
   await browserB.testBridge.waitForTabUrl('multi-sync-1', 20000);
   await browserB.testBridge.waitForTabUrl('multi-sync-2', 20000);
@@ -195,7 +195,7 @@ async function testMultipleTabsBothWindowsMerge(browserA, browserB) {
   // Create second window with 2 tabs
   const newWinUrl1 = generateTestUrl('multi-newwin-1');
   const newWindow = await browserA.testBridge.createWindow(newWinUrl1);
-  await sleep(1000);
+  await sleep(500);
 
   // Create a second tab in the new window
   // (createTab creates in the sync window, so use createWindow's tab + add another)
@@ -207,10 +207,10 @@ async function testMultipleTabsBothWindowsMerge(browserA, browserB) {
   console.log(`  Switching sync to new window ${newWindow.id}...`);
   await browserA.testBridge.adoptSyncWindow(newWindow.id);
 
-  await sleep(3000);
+  await sleep(1500);
   await browserA.testBridge.waitForSyncComplete(10000);
   await browserB.testBridge.waitForSyncComplete(10000);
-  await sleep(5000);
+  await sleep(2000);
 
   const tabsB = await browserB.testBridge.getTabs();
   const urlsB = getSyncableUrls(tabsB);
@@ -237,7 +237,7 @@ async function testMultipleTabsBothWindowsMerge(browserA, browserB) {
   } catch (e) {
     // may fail
   }
-  await sleep(1000);
+  await sleep(500);
 
   results.pass('Multiple Tabs in Both Windows Merge Correctly');
 }

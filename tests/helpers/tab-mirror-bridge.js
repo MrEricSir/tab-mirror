@@ -249,18 +249,18 @@ class TabMirrorBridge extends TestBridge {
 
         if (connectionCount === expectedCount) {
           // Give it a moment to make sure the connection is stable
-          await sleep(1000);
+          await sleep(500);
           // Double-check it's still the same
           const verifyCount = await this.getConnectionCount();
           if (verifyCount === expectedCount) {
             return true;
           }
         }
-        await sleep(1000);
+        await sleep(500);
       } catch (error) {
         // Context might've been lost, keep trying
         console.log(`  [waitForConnections] Temporary error: ${error.message}`);
-        await sleep(1000);
+        await sleep(500);
       }
     }
 
@@ -294,10 +294,10 @@ class TabMirrorBridge extends TestBridge {
           stableCount = 0;
         }
 
-        await sleep(1000);
+        await sleep(300);
       } catch (error) {
         console.log(`  [waitForSyncComplete] Temporary error: ${error.message}`);
-        await sleep(1000);
+        await sleep(300);
       }
     }
 

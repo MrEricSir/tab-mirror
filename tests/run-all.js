@@ -154,7 +154,7 @@ async function cleanupBetweenTests() {
   // 1. Wait for geckodriver to finish
   console.log('  Waiting for test processes to terminate...');
   for (let i = 0; i < 10; i++) {
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 500));
     try {
       const output = execSync('pgrep -f geckodriver 2>/dev/null | wc -l', { encoding: 'utf8' });
       const count = parseInt(output.trim());
@@ -204,7 +204,7 @@ async function cleanupBetweenTests() {
     peerServerProcess.kill();
     peerServerProcess = null;
   }
-  await new Promise(resolve => setTimeout(resolve, 2000));
+  await new Promise(resolve => setTimeout(resolve, 1000));
   peerServerProcess = await launchServer(
     'PEER', 'node', [path.join(__dirname, '..', 'test-server.js')],
     'Server running on'

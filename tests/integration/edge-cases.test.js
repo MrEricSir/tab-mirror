@@ -42,9 +42,9 @@ async function testPrivateWindowExcluded(browserA, browserB) {
   await Assert.isTrue(stateA.syncWindowId !== null, 'Sync window should still be set');
 
   // Wait for any sync activity to settle
-  await sleep(3000);
+  await sleep(1500);
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(2000);
+  await sleep(1000);
 
   // Private tab should NOT have synced to B
   const tabsAfter = await browserB.testBridge.getTabs();
@@ -76,7 +76,7 @@ async function testExtensionReloadPersistence(browserA, browserB) {
 
   // Create a tab to check it persists across restart
   await browserA.testBridge.createTab(generateTestUrl('persist-across-restart'));
-  await sleep(2000);
+  await sleep(1000);
   await browserA.testBridge.waitForSyncComplete(10000);
 
   const tabsBefore = await browserA.testBridge.getTabs();
@@ -93,7 +93,7 @@ async function testExtensionReloadPersistence(browserA, browserB) {
 
   // Wait for re-sync
   await browserA.testBridge.waitForSyncComplete(15000);
-  await sleep(2000);
+  await sleep(1000);
 
   // Check device ID persisted
   const stateAfter = await browserA.testBridge.getState();
@@ -110,9 +110,9 @@ async function testExtensionReloadPersistence(browserA, browserB) {
 
   // Check sync still works: create tab on B, should appear on A
   await browserB.testBridge.createTab(generateTestUrl('post-restart-sync'));
-  await sleep(2000);
+  await sleep(1000);
   await browserA.testBridge.waitForSyncComplete(15000);
-  await sleep(2000);
+  await sleep(1000);
 
   const tabsAfterSync = await browserA.testBridge.getTabs();
   const postRestartTab = tabsAfterSync.find(t => t.url && t.url.includes('post-restart-sync'));
@@ -137,16 +137,16 @@ async function testGroupNameConflicts(browserA, browserB) {
   // Create tabs on both browsers
   const tabA1 = await browserA.testBridge.createTab(generateTestUrl('conflict-a1'));
   const tabA2 = await browserA.testBridge.createTab(generateTestUrl('conflict-a2'));
-  await sleep(1000);
+  await sleep(500);
 
   const tabB1 = await browserB.testBridge.createTab(generateTestUrl('conflict-b1'));
   const tabB2 = await browserB.testBridge.createTab(generateTestUrl('conflict-b2'));
-  await sleep(2000);
+  await sleep(1000);
 
   // Wait for initial sync
   await browserA.testBridge.waitForSyncComplete(15000);
   await browserB.testBridge.waitForSyncComplete(15000);
-  await sleep(2000);
+  await sleep(1000);
 
   // Grab fresh tab IDs (sync may have changed them)
   const allTabsA = await browserA.testBridge.getTabs();
@@ -179,10 +179,10 @@ async function testGroupNameConflicts(browserA, browserB) {
   }
 
   // Wait for sync
-  await sleep(3000);
+  await sleep(1500);
   await browserA.testBridge.waitForSyncComplete(15000);
   await browserB.testBridge.waitForSyncComplete(15000);
-  await sleep(3000);
+  await sleep(1500);
 
   // Check that both browsers have both groups (different sync IDs, same name)
   const groupsAfterA = await browserA.testBridge.getGroupCount();

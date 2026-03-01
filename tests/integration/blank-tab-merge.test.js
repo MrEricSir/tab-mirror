@@ -32,7 +32,7 @@ async function testBlankTabMergeDuplication(browserA, browserB) {
     await browserB.testBridge.createTab('about:blank');
 
     // Let incremental sync settle
-    await sleep(3000);
+    await sleep(1500);
     await browserA.testBridge.waitForSyncComplete(10000);
     await browserB.testBridge.waitForSyncComplete(10000);
 
