@@ -314,14 +314,26 @@ async function testPopupPairButtonsVisibleFromNonSyncWindow(browserA) {
     const syncWinId = await browserA.testBridge.getSyncWindowId();
     console.log(`  Current sync window: ${syncWinId}`);
 
+    const handlesBefore = await driver.getAllWindowHandles();
+
     // Create a second window (this is NOT the sync window)
     const newWin = await browserA.testBridge.createWindow('about:blank');
     console.log(`  Created non-sync window: ${newWin.id}`);
 
-    // Open popup from the non-sync window by switching Selenium there first
-    const allHandles = await driver.getAllWindowHandles();
-    const lastHandle = allHandles[allHandles.length - 1];
-    await driver.switchTo().window(lastHandle);
+    // Find the new window handle by looking for the one not in the previous list.
+    let newWindowHandle;
+    for (let i = 0; i < 20; i++) {
+        const handlesAfter = await driver.getAllWindowHandles();
+        newWindowHandle = handlesAfter.find(h => !handlesBefore.includes(h));
+        if (newWindowHandle) {
+            break;
+        }
+        await sleep(250);
+    }
+    if (!newWindowHandle) {
+        throw new Error('New window handle never appeared');
+    }
+    await driver.switchTo().window(newWindowHandle);
 
     const popupUrl = await browserA.testBridge.getPopupUrl();
     await driver.switchTo().newWindow('tab');
@@ -346,12 +358,19 @@ async function testPopupPairButtonsVisibleFromNonSyncWindow(browserA) {
 
         results.pass('Pair Buttons Visible From Non-Sync Window');
     } finally {
-        // Close popup tab
-        await driver.switchTo().window(popupHandle);
-        await driver.close();
-        // Switch back to first handle and reset
-        await driver.switchTo().window(allHandles[0]);
+        // Close popup tab, if still open.
+        try {
+            await driver.switchTo().window(popupHandle);
+            await driver.close();
+        } catch (e) {
+            // Already closed.
+        }
+
+        // Switch to any remaining window, reset the bridge.
+        const remaining = await driver.getAllWindowHandles();
+        await driver.switchTo().window(remaining[0]);
         await browserA.testBridge.reset();
+
         // Clean up the fake device
         await browserA.testBridge.unpairDevice('fake-peer-for-buttons-test');
     }
