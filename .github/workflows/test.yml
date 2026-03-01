@@ -25,6 +25,8 @@ jobs:
 
     - name: Install geckodriver
       uses: browser-actions/setup-geckodriver@latest
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Verify Firefox and geckodriver
       run: |

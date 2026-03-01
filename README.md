@@ -11,7 +11,7 @@ Synchronizes tabs across multiple Firefox instances via PeerJS.
 - **Sync window**: Designate one window per device for syncing (does not work in private windows by design)
 - **E2E encryption**: AES-256-GCM on top of WebRTC's built-in DTLS
 
-Does not sync history, cookies, or passwords. Works only with desktop Firefox.
+Does not sync history, cookies, POST requests, or passwords. Works only with desktop Firefox.
 
 ## Installation
 
@@ -43,7 +43,7 @@ npm run build        # Build both
 ### Testing
 
 ```bash
-npm test             # Run all 18 integration test suites
+npm test             # Run all 20 integration test suites
 npm run lint         # Extension linting
 ```
 
@@ -65,7 +65,7 @@ tab-mirror/
 │   ├── content-test.js     # Test-mode content script
 │   └── peerjs.min.js       # PeerJS library (minified)
 ├── tests/
-│   ├── integration/        # 18 integration test suites
+│   ├── integration/        # 20 integration test suites
 │   ├── helpers/            # Test utilities and Tab Mirror bridge
 │   ├── run-all.js          # Full test runner
 │   └── run-with-server.js  # Single-suite test runner
