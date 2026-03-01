@@ -82,7 +82,7 @@ async function testNoDuplicateNotificationOnReconnect(browserA, browserB) {
   // Disconnect and reconnect -- should NOT produce a second notification.
   console.log('  Disconnecting A from B...');
   await browserA.testBridge.disconnectPeer(stateB.myDeviceId);
-  await sleep(2000);
+  await sleep(1000);
 
   console.log('  Waiting for automatic reconnection...');
   const reconnected = await browserA.testBridge.waitForConnections(1, 30000);

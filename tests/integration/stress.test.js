@@ -67,7 +67,7 @@ async function testRapidTabChanges(browserA, browserB) {
     await sleep(100); // Very short delay
   }
 
-  await sleep(500);
+  await sleep(250);
 
   // Close 3 non-testbridge-init tabs (last 3)
   const allTabs = await browserA.testBridge.getTabs();
@@ -79,7 +79,7 @@ async function testRapidTabChanges(browserA, browserB) {
   }
   console.log(`  Closed ${toClose.length} tabs`);
 
-  await sleep(1000);
+  await sleep(500);
 
   const finalCountA = (await browserA.testBridge.getTabs()).length;
   console.log(`  Browser A final count: ${finalCountA}`);
@@ -194,7 +194,7 @@ async function testBroadcastSerialization(browserA, browserB) {
 
   // Let broadcasts settle
   console.log('  Waiting for broadcasts to settle...');
-  await sleep(3000);
+  await sleep(1500);
   await browserA.testBridge.waitForSyncComplete(15000);
   await sleep(2000);
 
@@ -236,7 +236,7 @@ async function main() {
     console.log();
     console.log('Launching browsers...');
     browserA = await launchBrowser();
-    await sleep(500); // Make sure timestamps differ for unique IDs
+    await sleep(200); // Make sure timestamps differ for unique IDs
     browserB = await launchBrowser();
     console.log('✅ Browsers launched');
 

@@ -28,7 +28,7 @@ async function testInitialSyncNoGroupDuplication() {
     console.log('  Browser A launched');
 
     // Let A fully init (no peers yet)
-    await sleep(3000);
+    await sleep(1500);
 
     // See if tabGroups API is available
     const groupCheck = await browserA.testBridge.getGroupCount();
@@ -41,7 +41,7 @@ async function testInitialSyncNoGroupDuplication() {
     // Create tabs and group them on A
     const t1 = await browserA.testBridge.createTab(generateTestUrl('init-grp-1'));
     const t2 = await browserA.testBridge.createTab(generateTestUrl('init-grp-2'));
-    await sleep(1000);
+    await sleep(500);
 
     console.log('  Creating group "Project" on A...');
     try {
@@ -54,7 +54,7 @@ async function testInitialSyncNoGroupDuplication() {
       }
       throw error;
     }
-    await sleep(1000);
+    await sleep(500);
 
     // A should have exactly 1 group with 2 tabs
     const groupsA = await browserA.testBridge.getGroupCount();
@@ -76,7 +76,7 @@ async function testInitialSyncNoGroupDuplication() {
 
     await browserA.testBridge.waitForSyncComplete(15000);
     await browserB.testBridge.waitForSyncComplete(15000);
-    await sleep(3000);  // extra time for groups to settle
+    await sleep(1500);  // extra time for groups to settle
     await browserA.testBridge.waitForSyncComplete(10000);
     await browserB.testBridge.waitForSyncComplete(10000);
 
@@ -127,7 +127,7 @@ async function testInitialSyncMultipleGroups() {
   try {
     console.log('  Launching Browser A...');
     browserA = await launchBrowser();
-    await sleep(3000);
+    await sleep(1500);
 
     const groupCheck = await browserA.testBridge.getGroupCount();
     if (groupCheck.error) {
@@ -141,7 +141,7 @@ async function testInitialSyncMultipleGroups() {
     const t2 = await browserA.testBridge.createTab(generateTestUrl('multi-grp-a2'));
     const t3 = await browserA.testBridge.createTab(generateTestUrl('multi-grp-b1'));
     const t4 = await browserA.testBridge.createTab(generateTestUrl('multi-grp-b2'));
-    await sleep(1000);
+    await sleep(500);
 
     console.log('  Creating group "Alpha" (blue) on A...');
     try {
@@ -156,7 +156,7 @@ async function testInitialSyncMultipleGroups() {
 
     console.log('  Creating group "Beta" (red) on A...');
     await browserA.testBridge.groupTabs([t3.id, t4.id], 'Beta', 'red');
-    await sleep(1000);
+    await sleep(500);
 
     // A should have 2 groups
     const groupsA = await browserA.testBridge.getGroupCount();
@@ -174,7 +174,7 @@ async function testInitialSyncMultipleGroups() {
 
     await browserA.testBridge.waitForSyncComplete(15000);
     await browserB.testBridge.waitForSyncComplete(15000);
-    await sleep(3000);
+    await sleep(1500);
     await browserA.testBridge.waitForSyncComplete(10000);
     await browserB.testBridge.waitForSyncComplete(10000);
 

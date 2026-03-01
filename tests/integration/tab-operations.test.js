@@ -81,7 +81,7 @@ async function testTabOrdering(browserA, browserB) {
   // Wait for sync
   console.log('  Waiting for initial sync...');
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(2000);
+  await sleep(1000);
   await browserB.testBridge.waitForSyncComplete(10000);
 
   // Check initial order matches
@@ -99,7 +99,7 @@ async function testTabOrdering(browserA, browserB) {
   // Wait for sync
   console.log('  Waiting for reorder sync...');
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(2000);
+  await sleep(1000);
   await browserB.testBridge.waitForSyncComplete(10000);
 
   // Check order matches after move
@@ -145,7 +145,7 @@ async function testTabPinning(browserA, browserB) {
   // Wait for sync
   console.log('  Waiting for pin sync...');
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(2000);
+  await sleep(1000);
   await browserB.testBridge.waitForSyncComplete(10000);
 
   // Check pinned status matches
@@ -165,7 +165,7 @@ async function testTabPinning(browserA, browserB) {
   // Wait for sync
   console.log('  Waiting for unpin sync...');
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(2000);
+  await sleep(1000);
   await browserB.testBridge.waitForSyncComplete(10000);
 
   // Check unpinned status matches
@@ -215,7 +215,7 @@ async function testTabGroupOperations(browserA, browserB) {
     // Wait for sync
     console.log('  Waiting for group creation sync...');
     await browserA.testBridge.waitForSyncComplete(10000);
-    await sleep(2000);
+    await sleep(1000);
     await browserB.testBridge.waitForSyncComplete(10000);
 
     // Check grouped tabs in both browsers
@@ -238,7 +238,7 @@ async function testTabGroupOperations(browserA, browserB) {
     // Wait for sync
     console.log('  Waiting for ungroup sync...');
     await browserA.testBridge.waitForSyncComplete(10000);
-    await sleep(2000);
+    await sleep(1000);
     await browserB.testBridge.waitForSyncComplete(10000);
 
     // No grouped tabs should remain
@@ -302,7 +302,7 @@ async function testComplexTabOperations(browserA, browserB) {
   // Let syncs finish
   console.log('  Waiting for complex sync...');
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(3000);
+  await sleep(1500);
   await browserB.testBridge.waitForSyncComplete(10000);
 
   // Check everything matches
@@ -360,7 +360,7 @@ async function testOrderPersistenceAcrossChanges(browserA, browserB) {
   // Wait for sync
   console.log('  Waiting for sync after multiple operations...');
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(3000);
+  await sleep(1500);
   await browserB.testBridge.waitForSyncComplete(10000);
 
   // Check final state matches
@@ -427,7 +427,7 @@ async function testGroupsSurviveReorder(browserA, browserB) {
   // Wait for sync
   console.log('  Waiting for group sync to Browser B...');
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(2000);
+  await sleep(1000);
   await browserB.testBridge.waitForSyncComplete(10000);
 
   // Check our tabs are grouped in B
@@ -445,7 +445,7 @@ async function testGroupsSurviveReorder(browserA, browserB) {
   // Wait for sync
   console.log('  Waiting for reorder sync...');
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(3000);
+  await sleep(1500);
   await browserB.testBridge.waitForSyncComplete(10000);
 
   // Groups should've survived the reorder in B
@@ -500,7 +500,7 @@ async function testGroupsSurviveReconnection(browserA, browserB) {
   // Wait for initial sync
   console.log('  Waiting for initial sync...');
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(2000);
+  await sleep(1000);
   await browserB.testBridge.waitForSyncComplete(10000);
 
   // Check our tabs are grouped in B
@@ -518,7 +518,7 @@ async function testGroupsSurviveReconnection(browserA, browserB) {
   // Trigger sync on A to help B reconnect
   console.log('  Triggering sync on Browser A to aid reconnection...');
   await browserA.testBridge.triggerSync();
-  await sleep(2000);
+  await sleep(1000);
 
   // Wait for reconnection
   console.log('  Waiting for reconnection...');
@@ -528,11 +528,11 @@ async function testGroupsSurviveReconnection(browserA, browserB) {
   // Wait for sync to stabilize
   console.log('  Waiting for sync after reconnection...');
   await browserA.testBridge.waitForSyncComplete(15000);
-  await sleep(3000);
+  await sleep(1500);
   await browserB.testBridge.waitForSyncComplete(15000);
 
   // Extra time for any feedback loops to settle
-  await sleep(3000);
+  await sleep(1500);
 
   // Groups should've survived the reconnection
   tabsB = await getTabOrder(browserB.testBridge);
@@ -600,7 +600,7 @@ async function testGroupsNotDuplicatedOnReconnect(browserA, browserB) {
   // Wait for sync to Browser B
   console.log('  Waiting for sync to Browser B...');
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(2000);
+  await sleep(1000);
   await browserB.testBridge.waitForSyncComplete(10000);
 
   // Count distinct groups on both browsers before restart
@@ -619,14 +619,14 @@ async function testGroupsNotDuplicatedOnReconnect(browserA, browserB) {
   // Nudge reconnection
   console.log('  Triggering sync on Browser B...');
   await browserB.testBridge.triggerSync();
-  await sleep(2000);
+  await sleep(1000);
 
   const reconnected = await browserA.testBridge.waitForConnections(1, 45000);
   await Assert.isTrue(reconnected, 'Browser A should reconnect after restart');
   await browserA.testBridge.waitForSyncComplete(15000);
-  await sleep(3000);
+  await sleep(1500);
   await browserB.testBridge.waitForSyncComplete(15000);
-  await sleep(3000);
+  await sleep(1500);
 
   // Count distinct groups on both browsers after A's restart
   tabsA = await getTabOrder(browserA.testBridge);
@@ -733,14 +733,14 @@ async function testGroupsStableAcrossMultipleRestarts(browserA, browserB) {
 
     console.log(`  Triggering sync on Browser ${who === 'A' ? 'B' : 'A'}...`);
     await helper.testBridge.triggerSync();
-    await sleep(2000);
+    await sleep(1000);
 
     const reconnected = await target.testBridge.waitForConnections(1, 45000);
     await Assert.isTrue(reconnected, `Browser ${who} should reconnect`);
     await browserA.testBridge.waitForSyncComplete(15000);
-    await sleep(3000);
+    await sleep(1500);
     await browserB.testBridge.waitForSyncComplete(15000);
-    await sleep(2000);
+    await sleep(1000);
 
     const afterA = await browserA.testBridge.getGroupCount();
     const afterB = await browserB.testBridge.getGroupCount();
@@ -791,7 +791,7 @@ async function testPrivilegedTabOrdering(browserA, browserB) {
   await browserA.testBridge.moveTab(privTab.id, tabC.index);
   console.log(`  Moved privileged tab to index ${tabC.index} (between B and C)`);
 
-  await sleep(2000);
+  await sleep(1000);
   await browserA.testBridge.waitForSyncComplete(10000);
   await browserB.testBridge.waitForSyncComplete(10000);
 
@@ -805,7 +805,7 @@ async function testPrivilegedTabOrdering(browserA, browserB) {
   await browserA.testBridge.createTab(urlD);
   console.log(`  Created tab D after privileged tab: ${urlD}`);
 
-  await sleep(2000);
+  await sleep(1000);
   await browserA.testBridge.waitForSyncComplete(10000);
   await browserB.testBridge.waitForSyncComplete(10000);
 
@@ -833,7 +833,7 @@ async function testNavigateToPrivilegedUrl(browserA, browserB) {
   const tab = await browserA.testBridge.createTab(normalUrl);
   console.log(`  Created tab: ${normalUrl} (id: ${tab.id})`);
 
-  await sleep(2000);
+  await sleep(1000);
   await browserA.testBridge.waitForSyncComplete(10000);
   await browserB.testBridge.waitForSyncComplete(10000);
 
@@ -850,7 +850,7 @@ async function testNavigateToPrivilegedUrl(browserA, browserB) {
   // Let multiple sync cycles run
   await sleep(5000);
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(3000);
+  await sleep(1500);
 
   // Tab should still exist in A
   const tabsAAfter = await browserA.testBridge.getTabs();
@@ -1006,7 +1006,7 @@ async function testSimultaneousGroupCreation(browserA, browserB) {
   }
 
   // Wait for sync to settle
-  await sleep(3000);
+  await sleep(1500);
   await browserA.testBridge.waitForSyncComplete(10000);
   await browserB.testBridge.waitForSyncComplete(10000);
 
@@ -1082,7 +1082,7 @@ async function testGroupColorTitleSync(browserA, browserB) {
 
   // Force broadcast; tabGroups.onUpdated may not fire cross-extension
   await browserA.testBridge.triggerSync();
-  await sleep(2000);
+  await sleep(1000);
 
   // Renamed group should appear on B
   const renamedOnB = await browserB.testBridge.waitForGroupState('Renamed Title', true);
@@ -1143,9 +1143,9 @@ async function testRapidGroupOperations(browserA, browserB) {
   }
 
   // Let everything sync
-  await sleep(2000);
+  await sleep(1000);
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(2000);
+  await sleep(1000);
   await browserB.testBridge.waitForSyncComplete(10000);
 
   // B should've converged with "Final Name" containing tabs 1 and 3
@@ -1209,7 +1209,7 @@ async function testClosingLastTabInGroup(browserA, browserB) {
 
   // Force broadcast: tab events may not fire cross-extension on Linux
   await browserA.testBridge.triggerSync();
-  await sleep(2000);
+  await sleep(1000);
 
   // Group should disappear on B
   const doomedGone = await browserB.testBridge.waitForGroupState('Doomed Group', false);
@@ -1369,7 +1369,7 @@ async function testInvalidPairingCode(browserA, browserB) {
   await browserB.testBridge._sendToTabMirror({ action: 'joinPairing', code: 'ZZZZ-ZZZZ' });
 
   // Wait a few seconds -- B should NOT reach 'success'
-  await sleep(3000);
+  await sleep(1500);
 
   const statusB = await browserB.testBridge._sendToTabMirror({ action: 'getPairingStatus' });
   console.log(`  B status after wrong code: ${statusB.status}`);
@@ -1499,7 +1499,7 @@ async function testPairedDeviceConnectionStatus(browserA, browserB) {
       break;
     }
     console.log(`  B in A's paired list: ${!!deviceB_inA}, connected: ${deviceB_inA ? deviceB_inA.connected : 'N/A'}`);
-    await sleep(2000);
+    await sleep(1000);
   }
   console.log(`  B in A's paired list: ${!!deviceB_inA}, connected: ${deviceB_inA ? deviceB_inA.connected : 'N/A'}`);
   await Assert.isTrue(!!deviceB_inA, 'A should have B as paired device');
@@ -1508,7 +1508,7 @@ async function testPairedDeviceConnectionStatus(browserA, browserB) {
   // Restart B
   console.log('  Simulating restart on B...');
   await browserB.testBridge.simulateRestart();
-  await sleep(2000);
+  await sleep(1000);
 
   // Check B's status on A -- may briefly show disconnected
   const devicesA_mid = await browserA.testBridge.getPairedDevices();
@@ -1519,7 +1519,7 @@ async function testPairedDeviceConnectionStatus(browserA, browserB) {
   console.log('  Waiting for B to reconnect...');
   await browserB.testBridge.waitForConnections(1, 30000);
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(2000);
+  await sleep(1000);
 
   // B should show as connected again
   const devicesA_after = await browserA.testBridge.getPairedDevices();
@@ -1674,7 +1674,7 @@ async function testInitialSyncPreservesGroups(browserA, browserB) {
   await browserB.testBridge.groupTabs([b1.id, b2.id], 'Join Group', 'red');
 
   // Let incremental sync propagate both groups
-  await sleep(2000);
+  await sleep(1000);
   await browserA.testBridge.waitForSyncComplete(10000);
   await browserB.testBridge.waitForSyncComplete(10000);
 
@@ -1703,7 +1703,7 @@ async function testInitialSyncPreservesGroups(browserA, browserB) {
   await browserA.testBridge.waitForSyncComplete(15000);
   await browserB.testBridge.waitForSyncComplete(15000);
   // Extra time for secondary sync cycles
-  await sleep(3000);
+  await sleep(1500);
   await browserA.testBridge.waitForSyncComplete(10000);
   await browserB.testBridge.waitForSyncComplete(10000);
 

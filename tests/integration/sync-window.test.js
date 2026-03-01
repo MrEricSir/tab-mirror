@@ -67,7 +67,7 @@ async function testTabsInSyncWindowSync(browserA, browserB) {
   console.log(`  Creating tab in Browser A sync window: ${uniqueUrl}`);
   await browserA.testBridge.createTab(uniqueUrl);
 
-  await sleep(2000);
+  await sleep(1000);
   await browserA.testBridge.waitForSyncComplete(10000);
 
   console.log('  Waiting for URL to appear in Browser B...');
@@ -94,11 +94,11 @@ async function testTabsInSecondWindowDontSync(browserA, browserB) {
   console.log(`  New window ID: ${newWindowId}`);
 
   // Wait for any sync activity to settle
-  await sleep(3000);
+  await sleep(1500);
   await browserA.testBridge.waitForSyncComplete(10000);
 
   // Extra time in case sync would propagate (it shouldn't)
-  await sleep(5000);
+  await sleep(2000);
 
   // B should NOT have the non-sync-tab URL
   const tabsB = await browserB.testBridge.getTabs();
@@ -114,7 +114,7 @@ async function testTabsInSecondWindowDontSync(browserA, browserB) {
   // Clean up: close the extra window
   console.log(`  Closing extra window ${newWindowId}...`);
   await browserA.testBridge.closeWindow(newWindowId);
-  await sleep(1000);
+  await sleep(500);
 
   results.pass('Tabs in Second Window Don\'t Sync');
 }
@@ -138,12 +138,12 @@ async function testClosingSyncWindowAdoptsFallback(browserA) {
   const fallbackWindow = await browserA.testBridge.createWindow(fallbackUrl);
   console.log(`  Fallback window ID: ${fallbackWindow.id}`);
 
-  await sleep(2000);
+  await sleep(1000);
 
   // Navigate old testbridge-init page to about:blank so init() won't find it
   console.log(`  Clearing TestBridge from sync window...`);
   await browserA.driver.get('about:blank');
-  await sleep(500);
+  await sleep(200);
 
   // Find fallback window's Selenium handle by diffing before/after
   const handlesAfter = await browserA.driver.getAllWindowHandles();
@@ -217,7 +217,7 @@ async function testAfterSyncWindowAdoptedTabsStillSync(browserA, browserB) {
   console.log(`  Creating tab in Browser A: ${uniqueUrl}`);
   await browserA.testBridge.createTab(uniqueUrl);
 
-  await sleep(2000);
+  await sleep(1000);
   await browserA.testBridge.waitForSyncComplete(10000);
 
   // B should have the after-adopt URL

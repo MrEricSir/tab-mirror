@@ -28,7 +28,7 @@ async function testServerFailureDuringOperation(browserA, browserB) {
   // Add a tab while connected
   console.log('  Creating tab while connected...');
   await browserA.testBridge.createTab(generateTestUrl('before-failure'));
-  await sleep(2000);
+  await sleep(1000);
 
   const countBeforeFailure = (await browserA.testBridge.getTabs()).length;
   console.log(`  Count before failure: ${countBeforeFailure}`);
@@ -40,7 +40,7 @@ async function testServerFailureDuringOperation(browserA, browserB) {
   console.log('  Testing that browsers remain stable...');
 
   // Tabs should stay put
-  await sleep(2000);
+  await sleep(1000);
   const countAfter = (await browserA.testBridge.getTabs()).length;
   await Assert.equal(countAfter, countBeforeFailure, 'Tab count should remain stable');
 
@@ -59,9 +59,9 @@ async function testTabStabilityWithoutServer(browserA, browserB) {
   // Create tabs locally (won't sync if server is down)
   console.log('  Creating local tabs...');
   const uniqueUrl = generateTestUrl('local');
-  await sleep(10000);
+  await sleep(5000);
   await browserA.testBridge.createTab(uniqueUrl);
-  await sleep(1000);
+  await sleep(500);
 
   const newCountA = (await browserA.testBridge.getTabs()).length;
   console.log(`  Browser A: ${newCountA} tabs`);
@@ -119,7 +119,7 @@ async function testNoDataLoss(browserA, browserB) {
   }
 
   console.log('  Waiting for operations to complete...');
-  await sleep(2000);
+  await sleep(1000);
 
   // All tabs should still be there
   const tabsFromA = await browserA.testBridge.getTabs();

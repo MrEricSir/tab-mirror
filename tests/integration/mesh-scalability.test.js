@@ -35,7 +35,7 @@ async function launchMesh(count) {
     browsers.push(b);
     console.log(`  Browser ${i + 1} launched`);
     if (i < count - 1) {
-      await sleep(3000);
+      await sleep(2000);
     }
   }
   return browsers;
@@ -63,7 +63,7 @@ async function waitForFullMesh(browsers) {
   for (const b of browsers) {
     await b.testBridge.triggerSync();
   }
-  await sleep(2000);
+  await sleep(1000);
 
   // Wait for synced peers. Each browser gets its own timeout.
   for (let i = 0; i < count; i++) {
@@ -146,13 +146,13 @@ async function testSimultaneousTabCreation(browsers) {
 
   // Wait for convergence
   console.log('  Waiting for convergence...');
-  await sleep(3000);
+  await sleep(1500);
   for (const b of browsers) {
     await b.testBridge.waitForSyncComplete(15000);
   }
 
   // Extra time for multi-hop propagation
-  await sleep(5000);
+  await sleep(2000);
   for (const b of browsers) {
     await b.testBridge.waitForSyncComplete(15000);
   }
@@ -201,7 +201,7 @@ async function testGroupSyncAcrossMesh(browsers) {
   }
 
   console.log('  Created group on Browser 1, waiting for propagation...');
-  await sleep(1000);
+  await sleep(500);
   await browsers[0].testBridge.waitForSyncComplete(15000);
 
   // Group should appear on all other browsers
@@ -244,7 +244,7 @@ async function main() {
     for (const b of browsers) {
       await b.testBridge.waitForSyncComplete(15000);
     }
-    await sleep(2000);
+    await sleep(1000);
     console.log('✅ Initial sync complete');
 
     const tests = [

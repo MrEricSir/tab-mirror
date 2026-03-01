@@ -42,7 +42,7 @@ async function testRedirectSyncBack(browserA, browserB) {
 
   // Wait for potential sync-back (give time for any erroneous broadcast)
   console.log('  Waiting for potential sync-back...');
-  await sleep(4000);
+  await sleep(2000);
 
   // A's tab should still show the original URL, not the login redirect
   const tabsA = await browserA.testBridge.getTabs();
@@ -84,7 +84,7 @@ async function testBounceLoopDetected(browserA, browserB) {
   await browserB.testBridge.waitForTabLoad(bTab.id);
 
   // Wait and check stability
-  await sleep(5000);
+  await sleep(3000);
 
   // Check both browsers for stability - neither should be bouncing
   const tabsA = await browserA.testBridge.getTabs();
@@ -126,7 +126,7 @@ async function testLegitimateNavigationStillSyncs(browserA, browserB) {
 
   // Wait for suppression window to expire
   console.log('  Waiting for suppression window to expire...');
-  await sleep(4000);
+  await sleep(2000);
 
   // B navigates to a new URL (genuine user action)
   const newUrl = generateTestUrl('legit-user-navigate-XYZ');
@@ -169,9 +169,9 @@ async function testMultipleRedirectsSuppressed(browserA, browserB) {
 
   console.log('  Firing 3 rapid redirects on B...');
   await browserB.testBridge.updateTab(bTab.id, { url: redir1 });
-  await sleep(200);
+  await sleep(100);
   await browserB.testBridge.updateTab(bTab.id, { url: redir2 });
-  await sleep(200);
+  await sleep(100);
   await browserB.testBridge.updateTab(bTab.id, { url: redir3 });
 
   // Wait for any potential sync-back
@@ -217,7 +217,7 @@ async function testNavigationOnSenderNotSuppressed(browserA, browserB) {
   await Assert.isTrue(!!bTab, 'Tab should sync to B');
   console.log(`  Tab synced to B: tab ${bTab.id}`);
 
-  // Wait for echo — B broadcasts its state back, A processes it
+  // Wait for echo -- B broadcasts its state back, A processes it
   console.log('  Waiting for echo round-trip...');
   await browserB.testBridge.waitForSyncComplete(10000);
   await browserA.testBridge.waitForSyncComplete(10000);

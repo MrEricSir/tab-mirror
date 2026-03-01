@@ -131,7 +131,7 @@ async function testSimultaneousChanges(browserA, browserB, browserC) {
 
   // Wait for convergence
   console.log('  Waiting for convergence...');
-  await sleep(3000);
+  await sleep(1500);
   await browserA.testBridge.waitForSyncComplete(10000);
   await browserB.testBridge.waitForSyncComplete(10000);
   await browserC.testBridge.waitForSyncComplete(10000);
@@ -207,12 +207,12 @@ async function testThreeWayGroupSync(browserA, browserB, browserC) {
     }
     throw error;
   }
-  await sleep(1000);
+  await sleep(500);
 
   // Wait for sync to propagate through mesh
   console.log('  Waiting for group to propagate to all peers...');
   await browserA.testBridge.waitForSyncComplete(10000);
-  await sleep(3000);
+  await sleep(1500);
   await browserB.testBridge.waitForSyncComplete(10000);
   await browserC.testBridge.waitForSyncComplete(10000);
 
@@ -250,7 +250,7 @@ async function testFourPeerMesh() {
       browsers.push(b);
       console.log(`  Browser ${i + 1} launched`);
       if (i < 3) {
-        await sleep(3000);
+        await sleep(2000);
       }
     }
 
@@ -286,7 +286,7 @@ async function testFourPeerMesh() {
     await browsers[0].testBridge.createTab(testUrl);
     console.log(`  Created tab on Browser 1: ${testUrl}`);
 
-    await sleep(2000);
+    await sleep(1000);
     await browsers[0].testBridge.waitForSyncComplete(15000);
 
     // All browsers should get the tab
@@ -326,15 +326,15 @@ async function main() {
     console.log('Launching three browsers...');
     browserA = await launchBrowser();
     console.log('  Browser A launched');
-    await sleep(3000); // Let first browser fully initialize
+    await sleep(2000); // Let first browser fully initialize
 
     browserB = await launchBrowser();
     console.log('  Browser B launched');
-    await sleep(3000); // Let second browser fully initialize
+    await sleep(2000); // Let second browser fully initialize
 
     browserC = await launchBrowser();
     console.log('  Browser C launched');
-    await sleep(3000); // Let third browser fully initialize
+    await sleep(2000); // Let third browser fully initialize
 
     console.log('✅ All browsers launched');
 
@@ -346,7 +346,7 @@ async function main() {
     await browserA.testBridge.waitForSyncComplete(15000);
     await browserB.testBridge.waitForSyncComplete(15000);
     await browserC.testBridge.waitForSyncComplete(15000);
-    await sleep(2000); // Extra time for convergence
+    await sleep(1000); // Extra time for convergence
     console.log('✅ Initial sync complete');
 
     // Run tests -- each wrapped so one failure doesn't stop the suite
