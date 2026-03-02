@@ -671,3 +671,7 @@ browser.theme.onUpdated.addListener(({ theme }) => applyThemeColors(theme));
 
 setInterval(updateUI, 1000);
 updateUI();
+
+if (typeof module !== 'undefined') {
+    module.exports = { escapeHtml, formatRelativeTime, friendlyName, shortPlatform, displayName };
+}

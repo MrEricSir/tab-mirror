@@ -101,3 +101,7 @@ async function getDeviceName() {
         return 'Firefox';
     }
 }
+
+if (typeof module !== 'undefined') {
+    module.exports = { formatPairingCode, normalizePairingCode };
+}

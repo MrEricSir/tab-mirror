@@ -29,6 +29,8 @@
       "pairing.js",
       "transport.js",
       "sync-engine.js",
+      "message-external.js",
+      "message-internal.js",
       "init.js"
     ]
   },

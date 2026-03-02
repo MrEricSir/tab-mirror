@@ -372,3 +372,7 @@ function validateRemoteState(remoteState) {
 
     return { ...remoteState, tabs: dedupedTabs, groups };
 }
+
+if (typeof module !== 'undefined') {
+    module.exports = { isPrivilegedUrl, isSyncableUrl, normalizeUrl, isAllowedUrlScheme, generateSyncId, validateTabData, validateRemoteState };
+}
