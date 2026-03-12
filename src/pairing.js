@@ -49,8 +49,8 @@ async function removePairedDevice(peerId) {
     console.log(`[PAIR] Removed paired device: ${peerId}`);
 }
 
-function getSharedKeyForPeer(peerId) {
-    const device = pairedDevices.find(d => d.peerId === peerId);
+function getSharedKeyForPeer(peerId, devices) {
+    const device = devices.find(d => d.peerId === peerId);
     return device ? device.sharedKey : null;
 }
 
@@ -150,10 +150,15 @@ async function startPairing() {
     return { code, status: pairingState.status };
 }
 
+function isValidPairingCode(code) {
+    const normalized = normalizePairingCode(code || '');
+    const validChars = new RegExp(`^[${PAIRING_CHARSET}]{8}$`);
+    return validChars.test(normalized);
+}
+
 async function joinPairing(code) {
     code = normalizePairingCode(code || '');
-    const validChars = new RegExp(`^[${PAIRING_CHARSET}]{8}$`);
-    if (!validChars.test(code)) {
+    if (!isValidPairingCode(code)) {
         return { success: false, error: 'Invalid pairing code' };
     }
 
@@ -373,7 +378,7 @@ function acceptConnection(conn) {
 }
 
 function authenticateConnection(conn) {
-    const sharedKey = getSharedKeyForPeer(conn.peer);
+    const sharedKey = getSharedKeyForPeer(conn.peer, pairedDevices);
     if (!sharedKey) {
         console.log(`[AUTH] Rejecting unpaired peer: ${conn.peer}`);
         fileLog(`Rejected unpaired peer: ${conn.peer}`, 'AUTH');
@@ -448,4 +453,8 @@ function authenticateConnection(conn) {
             }
         });
     }
+}
+
+if (typeof module !== 'undefined') {
+    module.exports = { isValidPairingCode, getSharedKeyForPeer };
 }

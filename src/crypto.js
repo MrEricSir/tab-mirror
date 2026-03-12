@@ -66,7 +66,7 @@ async function getOrDeriveEncryptionKey(peerId) {
     if (encryptionKeyCache.has(peerId)) {
         return encryptionKeyCache.get(peerId);
     }
-    const sharedKey = getSharedKeyForPeer(peerId);
+    const sharedKey = getSharedKeyForPeer(peerId, pairedDevices);
     if (!sharedKey) {
         return null;
     }
@@ -103,5 +103,13 @@ async function getDeviceName() {
 }
 
 if (typeof module !== 'undefined') {
-    module.exports = { formatPairingCode, normalizePairingCode };
+    module.exports = {
+        PAIRING_CHARSET,
+        formatPairingCode,
+        normalizePairingCode,
+        generatePairingCode,
+        generateSharedKey,
+        computeHMAC,
+        verifyHMAC,
+    };
 }
