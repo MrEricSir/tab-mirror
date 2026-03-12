@@ -134,11 +134,20 @@ async function testTabNavigationSync(browserA, browserB) {
   console.log();
   console.log('Test: Tab Navigation Sync');
 
-  // Navigate active tab to a new unique URL via bridge API
+  // Create a dedicated tab for new URL.
+  const initialUrl = generateTestUrl('nav-initial');
+  console.log(`  Creating tab in Browser A...`);
+  const navTab = await browserA.testBridge.createTab(initialUrl);
+  await browserA.testBridge.waitForTabLoad(navTab.id);
+
+  // Wait for tab to sync to B
+  await browserA.testBridge.waitForSyncComplete(10000);
+  await browserB.testBridge.waitForTabUrl('nav-initial', 20000);
+
+  // Navigate it to a different URL
   const uniqueUrl = generateTestUrl('navigation');
-  console.log(`  Navigating active tab to new page in Browser A...`);
-  const activeTab = await browserA.testBridge.getActiveTab();
-  await browserA.testBridge.updateTab(activeTab.id, { url: uniqueUrl });
+  console.log(`  Navigating tab to new page in Browser A...`);
+  await browserA.testBridge.updateTab(navTab.id, { url: uniqueUrl });
 
   // Let it load and register
   await sleep(1500);
@@ -248,18 +257,7 @@ async function testReloadDuringSyncStability(browserA, browserB) {
   console.log(`  Tab count after reload - A: ${countAfterReload}, B: ${countB}`);
 
   await Assert.equal(countAfterReload, countBeforeReload, 'Reload should not change tab count on A');
-
-  // Sync engine may temporarily dup on B during reload because onUpdated
-  // events trigger a sync broadcast. A follow-up sync should resolve it,
-  // but if not this is a known limitation.
-  if (countB !== countBeforeReload) {
-    console.log(`  ⚠️  Browser B has ${countB} tabs (expected ${countBeforeReload})`);
-    console.log(`  This indicates the sync engine creates duplicates on reload: known issue`);
-  }
-  await Assert.lessThan(
-    Math.abs(countB - countBeforeReload), 2,
-    `Reload should not significantly change tab count on B (got ${countB}, expected ${countBeforeReload})`
-  );
+  await Assert.equal(countB, countBeforeReload, 'Reload should not change tab count on B');
 
   // Check URL is still present in both browsers
   const tabsAfterA = await browserA.testBridge.getTabs();
