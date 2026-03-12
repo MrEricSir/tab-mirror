@@ -4,6 +4,20 @@
 // 0.peerjs.com. Discovery polls listAllPeers() (test) or iterates paired
 // devices (production). Lower ID peer always initiates the connection.
 
+// Exponential backoff. Stops after maxMs
+function computeRetryBackoff(attempts, minMs, maxMs) {
+    return Math.min(minMs * Math.pow(2, attempts), maxMs);
+}
+
+// Pure: should we dial this peer? Returns false for self, already connected,
+// pending, or when myId >= peerId (lower ID always initiates).
+function shouldDialPeer(peerId, myId, connectedPeerIds, pendingPeerIds) {
+    if (peerId === myId) return false;
+    if (connectedPeerIds.has(peerId) || pendingPeerIds.has(peerId)) return false;
+    if (myId >= peerId) return false;
+    return true;
+}
+
 function setupPeerJS() {
     if (window.peer) {
         try {
@@ -134,7 +148,7 @@ function dialPeer(remoteId) {
     // Exponential backoff
     const retry = connectionRetries.get(remoteId);
     if (retry) {
-        const backoff = Math.min(MIN_RETRY_BACKOFF_MS * Math.pow(2, retry.attempts), MAX_RETRY_BACKOFF_MS);
+        const backoff = computeRetryBackoff(retry.attempts, MIN_RETRY_BACKOFF_MS, MAX_RETRY_BACKOFF_MS);
         if (Date.now() - retry.lastAttempt < backoff) {
             return;
         }
@@ -164,16 +178,10 @@ async function discoverPeers() {
             });
             // Lower ID dials higher to avoid duplicate connections
             for (const peerId of allPeers) {
-                if (peerId === myDeviceId) {
-                    continue;
-                }
-                if (connections.has(peerId) || pendingDials.has(peerId)) {
-                    continue;
-                }
                 if (!peerId.startsWith('test-mirror-')) {
                     continue; // Only dial tab-mirror peers
                 }
-                if (myDeviceId < peerId) {
+                if (shouldDialPeer(peerId, myDeviceId, connections, pendingDials)) {
                     dialPeer(peerId);
                 }
             }
@@ -183,13 +191,7 @@ async function discoverPeers() {
     } else {
         // Discover peers from paired devices list
         for (const device of pairedDevices) {
-            if (device.peerId === myDeviceId) {
-                continue;
-            }
-            if (connections.has(device.peerId) || pendingDials.has(device.peerId)) {
-                continue;
-            }
-            if (myDeviceId < device.peerId) {
+            if (shouldDialPeer(device.peerId, myDeviceId, connections, pendingDials)) {
                 dialPeer(device.peerId);
             }
         }
@@ -199,4 +201,8 @@ async function discoverPeers() {
 // Setup Transport
 function setupTransport() {
     setupPeerJS();
+}
+
+if (typeof module !== 'undefined') {
+    module.exports = { computeRetryBackoff, shouldDialPeer };
 }

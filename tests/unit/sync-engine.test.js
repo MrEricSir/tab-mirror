@@ -1,7 +1,21 @@
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { computeAtomicMerge, computeRemoteDiff } = require('../../src/sync-engine.js');
+// Minimal globals needed for background.js to load in Node
+if (!globalThis.crypto || !globalThis.crypto.getRandomValues) {
+    globalThis.crypto = require('node:crypto').webcrypto;
+}
+globalThis.window = globalThis.window || {};
+globalThis.browser = globalThis.browser || {
+    storage: { local: { set: () => Promise.resolve(), remove: () => Promise.resolve() } }
+};
+
+// Stubs needed by findMatchingLocalTab (uses isPrivilegedUrl / normalizeUrl globals)
+const bg = require('../../src/background.js');
+globalThis.isPrivilegedUrl = bg.isPrivilegedUrl;
+globalThis.normalizeUrl = bg.normalizeUrl;
+
+const { computeAtomicMerge, computeRemoteDiff, findMatchingLocalTab, buildTabGroupingMap, shouldSuppressBounce } = require('../../src/sync-engine.js');
 
 // --- computeAtomicMerge ---
 
@@ -246,5 +260,138 @@ describe('computeRemoteDiff', () => {
         const rTab = tab('s1', 'https://new.com');
         const diff = computeRemoteDiff([rTab], prev);
         assert.equal(diff.updated[0].tab, rTab);
+    });
+});
+
+// --- findMatchingLocalTab ---
+
+describe('findMatchingLocalTab', () => {
+    const localTab = (id, url, opts = {}) => ({
+        id, url, pinned: false, index: 0, ...opts
+    });
+
+    test('exact match → returns tab', () => {
+        const locals = [localTab(1, 'https://a.com', { index: 2 })];
+        const remote = { url: 'https://a.com', pinned: false, index: 2 };
+        const result = findMatchingLocalTab(locals, remote, new Set(), 3);
+        assert.equal(result.id, 1);
+    });
+
+    test('URL mismatch → returns null', () => {
+        const locals = [localTab(1, 'https://a.com')];
+        const remote = { url: 'https://b.com', pinned: false, index: 0 };
+        assert.equal(findMatchingLocalTab(locals, remote, new Set(), 3), null);
+    });
+
+    test('pinned mismatch → returns null', () => {
+        const locals = [localTab(1, 'https://a.com', { pinned: true })];
+        const remote = { url: 'https://a.com', pinned: false, index: 0 };
+        assert.equal(findMatchingLocalTab(locals, remote, new Set(), 3), null);
+    });
+
+    test('index outside tolerance → returns null', () => {
+        const locals = [localTab(1, 'https://a.com', { index: 10 })];
+        const remote = { url: 'https://a.com', pinned: false, index: 0 };
+        assert.equal(findMatchingLocalTab(locals, remote, new Set(), 3), null);
+    });
+
+    test('skips already-tracked tabs', () => {
+        const locals = [localTab(1, 'https://a.com')];
+        const remote = { url: 'https://a.com', pinned: false, index: 0 };
+        const tracked = new Set([1]);
+        assert.equal(findMatchingLocalTab(locals, remote, tracked, 3), null);
+    });
+
+    test('skips privileged URLs', () => {
+        const locals = [localTab(1, 'moz-extension://foo')];
+        const remote = { url: 'moz-extension://foo', pinned: false, index: 0 };
+        assert.equal(findMatchingLocalTab(locals, remote, new Set(), 3), null);
+    });
+
+    test('about:blank remote → returns null (skipped)', () => {
+        const locals = [localTab(1, 'about:blank')];
+        const remote = { url: 'about:blank', pinned: false, index: 0 };
+        assert.equal(findMatchingLocalTab(locals, remote, new Set(), 3), null);
+    });
+
+    test('no match in list → returns null', () => {
+        const locals = [localTab(1, 'https://x.com'), localTab(2, 'https://y.com')];
+        const remote = { url: 'https://z.com', pinned: false, index: 0 };
+        assert.equal(findMatchingLocalTab(locals, remote, new Set(), 3), null);
+    });
+});
+
+// --- buildTabGroupingMap ---
+
+describe('buildTabGroupingMap', () => {
+    test('empty inputs → empty map', () => {
+        assert.deepEqual(buildTabGroupingMap([], {}, new Map()), {});
+    });
+
+    test('tabs without groups → empty map', () => {
+        const tabs = [{ sId: 's1', url: 'https://a.com' }];
+        assert.deepEqual(buildTabGroupingMap(tabs, {}, new Map()), {});
+    });
+
+    test('valid mapping → groups tabs by gSyncId', () => {
+        const tabs = [
+            { sId: 's1', groupSyncId: 'g1' },
+            { sId: 's2', groupSyncId: 'g1' },
+            { sId: 's3', groupSyncId: 'g2' }
+        ];
+        const groups = { g1: { title: 'A' }, g2: { title: 'B' } };
+        const syncMap = new Map([['s1', 101], ['s2', 102], ['s3', 103]]);
+        const result = buildTabGroupingMap(tabs, groups, syncMap);
+        assert.deepEqual(result, { g1: [101, 102], g2: [103] });
+    });
+
+    test('nonexistent group ref → tab skipped', () => {
+        const tabs = [{ sId: 's1', groupSyncId: 'g_missing' }];
+        const groups = { g1: { title: 'A' } };
+        const syncMap = new Map([['s1', 101]]);
+        assert.deepEqual(buildTabGroupingMap(tabs, groups, syncMap), {});
+    });
+
+    test('unmapped syncId → tab not added to group', () => {
+        const tabs = [{ sId: 's_unknown', groupSyncId: 'g1' }];
+        const groups = { g1: { title: 'A' } };
+        const syncMap = new Map(); // no mapping for s_unknown
+        const result = buildTabGroupingMap(tabs, groups, syncMap);
+        assert.deepEqual(result, { g1: [] });
+    });
+});
+
+// --- shouldSuppressBounce ---
+
+describe('shouldSuppressBounce', () => {
+    test('null history → false', () => {
+        assert.equal(shouldSuppressBounce(null, Date.now(), 'https://a.com', 30000), false);
+    });
+
+    test('undefined history → false', () => {
+        assert.equal(shouldSuppressBounce(undefined, Date.now(), 'https://a.com', 30000), false);
+    });
+
+    test('expired window → false', () => {
+        const history = { urls: ['https://a.com'], lastUpdated: 1000 };
+        assert.equal(shouldSuppressBounce(history, 50000, 'https://a.com', 30000), false);
+    });
+
+    test('URL in history within window → true', () => {
+        const now = Date.now();
+        const history = { urls: ['https://a.com', 'https://b.com'], lastUpdated: now - 1000 };
+        assert.equal(shouldSuppressBounce(history, now, 'https://a.com', 30000), true);
+    });
+
+    test('URL not in history within window → false', () => {
+        const now = Date.now();
+        const history = { urls: ['https://a.com'], lastUpdated: now - 1000 };
+        assert.equal(shouldSuppressBounce(history, now, 'https://other.com', 30000), false);
+    });
+
+    test('exact boundary: now - lastUpdated == bounceWindowMs → false (expired)', () => {
+        const history = { urls: ['https://a.com'], lastUpdated: 1000 };
+        // now - lastUpdated = 30000, which is NOT < 30000, so expired
+        assert.equal(shouldSuppressBounce(history, 31000, 'https://a.com', 30000), false);
     });
 });

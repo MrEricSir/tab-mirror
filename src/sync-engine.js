@@ -3,6 +3,46 @@
 // issue on Linux headless Firefox).
 const lastSeenGroupProps = new Map(); // gSyncId -> { title, color }
 
+// Pure: find an existing untracked local tab matching a remote tab based
+// on its properties.
+function findMatchingLocalTab(localTabs, remoteTab, trackedTabIds, indexTolerance) {
+    if (!remoteTab.url || remoteTab.url === 'about:blank') return null;
+    return localTabs.find(lt =>
+        !trackedTabIds.has(lt.id) &&
+        !isPrivilegedUrl(lt.url) &&
+        normalizeUrl(lt.url) === remoteTab.url &&
+        lt.pinned === (remoteTab.pinned || false) &&
+        Math.abs(lt.index - (remoteTab.index || 0)) <= indexTolerance
+    ) || null;
+}
+
+// Build tab groupping map, format: { gSyncId: [localTabId, ...] }
+function buildTabGroupingMap(targetTabs, targetGroups, syncIdToTabIdMap) {
+    const groupedTabs = {};
+    for (const tab of targetTabs) {
+        if (tab.groupSyncId && targetGroups[tab.groupSyncId]) {
+            if (!groupedTabs[tab.groupSyncId]) {
+                groupedTabs[tab.groupSyncId] = [];
+            }
+            const localId = syncIdToTabIdMap.get(tab.sId);
+            if (localId) {
+                groupedTabs[tab.groupSyncId].push(localId);
+            }
+        }
+    }
+    return groupedTabs;
+}
+
+// Should a URL update be suppressed to prevent bounce loops?
+function shouldSuppressBounce(history, now, newUrl, bounceWindowMs) {
+    if (!history) {
+        return false;
+    } else if ((now - history.lastUpdated) >= bounceWindowMs) {
+        return false;
+    }
+    return history.urls.includes(newUrl);
+}
+
 // Capture Local State
 // Grabs all syncable tabs and groups from the sync window. Each tab and group
 // gets a stable sync ID if it doesn't have one yet. The result is the payload
@@ -347,18 +387,7 @@ async function createTargetGroups(targetTabs, targetGroups) {
         return;
     }
     try {
-        const groupedTabs = {};
-        for (const tab of targetTabs) {
-            if (tab.groupSyncId && targetGroups[tab.groupSyncId]) {
-                if (!groupedTabs[tab.groupSyncId]) {
-                    groupedTabs[tab.groupSyncId] = [];
-                }
-                const localId = SYNC_ID_TO_TAB_ID.get(tab.sId);
-                if (localId) {
-                    groupedTabs[tab.groupSyncId].push(localId);
-                }
-            }
-        }
+        const groupedTabs = buildTabGroupingMap(targetTabs, targetGroups, SYNC_ID_TO_TAB_ID);
 
         for (const [gSyncId, tabIds] of Object.entries(groupedTabs)) {
             if (tabIds.length === 0) {
@@ -502,14 +531,8 @@ async function syncAddedAndUpdatedTabs(remoteTabs, prevState, diff) {
 
         // Try to adopt an existing untracked tab with same URL
         let adopted = false;
-        if (rTab.url && rTab.url !== 'about:blank') {
-            const match = localTabs.find(lt =>
-                !trackedTabIds.has(lt.id) &&
-                !isPrivilegedUrl(lt.url) &&
-                normalizeUrl(lt.url) === rTab.url &&
-                lt.pinned === (rTab.pinned || false) &&
-                Math.abs(lt.index - (rTab.index || 0)) <= INDEX_MATCH_TOLERANCE
-            );
+        {
+            const match = findMatchingLocalTab(localTabs, rTab, trackedTabIds, INDEX_MATCH_TOLERANCE);
             if (match) {
                 TAB_ID_TO_SYNC_ID.set(match.id, rTab.sId);
                 SYNC_ID_TO_TAB_ID.set(rTab.sId, match.id);
@@ -571,9 +594,7 @@ async function syncAddedAndUpdatedTabs(remoteTabs, prevState, diff) {
 
         // Bounce detection: Skip recently seen URLs for this tab.
         if (updates.url) {
-            const history = syncUrlHistory.get(sId);
-            if (history && (Date.now() - history.lastUpdated) < BOUNCE_DETECTION_WINDOW_MS
-                && history.urls.includes(updates.url)) {
+            if (shouldSuppressBounce(syncUrlHistory.get(sId), Date.now(), updates.url, BOUNCE_DETECTION_WINDOW_MS)) {
                 console.log(`[SYNC] Bounce detected for ${sId}, skipping URL ${updates.url}`);
                 fileLog(`Bounce detected for ${sId}, skipping URL ${updates.url}`, 'SYNC');
                 delete updates.url;
@@ -931,5 +952,5 @@ async function processSyncData(remoteState) {
 }
 
 if (typeof module !== 'undefined') {
-    module.exports = { computeAtomicMerge, computeRemoteDiff };
+    module.exports = { computeAtomicMerge, computeRemoteDiff, findMatchingLocalTab, buildTabGroupingMap, shouldSuppressBounce };
 }
