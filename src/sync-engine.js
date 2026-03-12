@@ -158,19 +158,13 @@ function trigger(debounceMs = BROADCAST_DEBOUNCE_MS) {
     broadcastDebounce = setTimeout(() => broadcastState(), debounceMs);
 }
 
-// Atomic Merge
-// Runs on first contact with a peer. Both tab sets get combined into one list:
-// higher peer ID's tabs go first, then the lower's. Duplicates are removed by
-// sync ID and by URL+pinned. Groups are unioned. The merged result gets applied
-// via replaceLocalState().
-async function performAtomicMerge(myState, remoteState) {
-    console.log(`[MERGE] Atomic merge with ${remoteState.peerId}`);
-    fileLog(`=== ATOMIC MERGE with ${remoteState.peerId} ===`, 'MERGE');
-
+// Helper function for performAtomicMerge()
+// Exported for unit testing.
+function computeAtomicMerge(localState, remoteState, myDeviceId) {
     // Higher peer ID goes first (keeps merge order stable)
     const iAmFirst = myDeviceId > remoteState.peerId;
-    const firstState = iAmFirst ? myState : remoteState;
-    const secondState = iAmFirst ? remoteState : myState;
+    const firstState = iAmFirst ? localState : remoteState;
+    const secondState = iAmFirst ? remoteState : localState;
 
     // Dedup by sync ID first, then by URL+pinned to handle restarts
     // where sync IDs get regenerated for the same tabs.
@@ -205,7 +199,6 @@ async function performAtomicMerge(myState, remoteState) {
             const remaining = firstUrlCounts.get(key) || 0;
             if (remaining > 0) {
                 firstUrlCounts.set(key, remaining - 1);
-                fileLog(`Dedup by URL: ${tab.url} (already in first state)`, 'MERGE');
                 continue;
             }
         }
@@ -216,10 +209,28 @@ async function performAtomicMerge(myState, remoteState) {
     // Merge groups (union of both group sets)
     const mergedGroups = { ...(firstState.groups || {}), ...(secondState.groups || {}) };
 
-    console.log(`[MERGE] Result: ${mergedTabs.length} tabs (${firstState.tabs.length} + ${secondState.tabs.length}, ${mergedTabs.length} unique)`);
-    fileLog(`Merged: ${mergedTabs.length} unique tabs`, 'MERGE');
+    return { tabs: mergedTabs, groups: mergedGroups };
+}
 
-    await replaceLocalState(mergedTabs, mergedGroups);
+// Merge Algorithm
+//
+// Combines two sets of tab into one result. To make this deterministic, higher
+// peer ID  tabs go first, then the lower ones.
+//
+// To dedupe tabs, we first go through based on sync ID, then by URL+pinned
+// combo.
+//
+// Groups are stabalized by taking the union.
+async function performAtomicMerge(myState, remoteState) {
+    console.log(`[MERGE] Atomic merge with ${remoteState.peerId}`);
+    fileLog(`=== ATOMIC MERGE with ${remoteState.peerId} ===`, 'MERGE');
+
+    const merged = computeAtomicMerge(myState, remoteState, myDeviceId);
+
+    console.log(`[MERGE] Result: ${merged.tabs.length} tabs`);
+    fileLog(`Merged: ${merged.tabs.length} unique tabs`, 'MERGE');
+
+    await replaceLocalState(merged.tabs, merged.groups);
 }
 
 // Tab Ordering
@@ -426,6 +437,49 @@ async function replaceLocalState(targetTabs, targetGroups = {}) {
     fileLog(`Replaced: ${TAB_ID_TO_SYNC_ID.size} tabs`, 'REPLACE');
 }
 
+// Pure Remote Diff
+// Compares incoming remote tabs against the previous snapshot to compute what
+// changed: added tabs, updated tabs (url/pinned/muted changes), and removed
+// sync IDs. No browser API calls -- pure data in, pure data out.
+function computeRemoteDiff(remoteTabs, prevRemoteState) {
+    const added = [];
+    const updated = [];
+    const removed = [];
+
+    const currentSyncIds = new Set();
+
+    for (const rTab of remoteTabs) {
+        currentSyncIds.add(rTab.sId);
+        const prevTab = prevRemoteState.get(rTab.sId);
+
+        if (!prevTab) {
+            added.push(rTab);
+        } else {
+            const changes = {};
+            if (prevTab.url !== rTab.url) {
+                changes.url = rTab.url;
+            }
+            if (prevTab.pinned !== rTab.pinned) {
+                changes.pinned = rTab.pinned;
+            }
+            if (prevTab.muted !== rTab.muted) {
+                changes.muted = rTab.muted;
+            }
+            if (Object.keys(changes).length > 0) {
+                updated.push({ sId: rTab.sId, changes, tab: rTab });
+            }
+        }
+    }
+
+    for (const [syncId] of prevRemoteState) {
+        if (!currentSyncIds.has(syncId)) {
+            removed.push(syncId);
+        }
+    }
+
+    return { added, updated, removed };
+}
+
 // Incremental Sync (diff-based)
 // Runs after the first sync with a peer. Compares incoming remote state against
 // lastKnownRemoteState for that peer and applies only the differences: new tabs
@@ -433,110 +487,117 @@ async function replaceLocalState(targetTabs, targetGroups = {}) {
 // and group membership changes are applied.
 
 // Picks up new and changed tabs from the remote. Returns { added, updated } counts.
-async function syncAddedAndUpdatedTabs(remoteTabs, prevState, prevSyncIds) {
+// diff parameter: Output from computeRemoteDiff()
+async function syncAddedAndUpdatedTabs(remoteTabs, prevState, diff) {
     const localTabs = await browser.tabs.query({ windowId: syncWindowId });
     const trackedTabIds = new Set(TAB_ID_TO_SYNC_ID.keys());
     let added = 0;
     let updated = 0;
 
-    for (const rTab of remoteTabs) {
-        if (!prevSyncIds.has(rTab.sId) && !SYNC_ID_TO_TAB_ID.has(rTab.sId)) {
-            // New tab -- try to adopt an existing untracked tab with same URL
-            let adopted = false;
-            if (rTab.url && rTab.url !== 'about:blank') {
-                const match = localTabs.find(lt =>
-                    !trackedTabIds.has(lt.id) &&
-                    !isPrivilegedUrl(lt.url) &&
-                    normalizeUrl(lt.url) === rTab.url &&
-                    lt.pinned === (rTab.pinned || false) &&
-                    Math.abs(lt.index - (rTab.index || 0)) <= INDEX_MATCH_TOLERANCE
-                );
-                if (match) {
-                    TAB_ID_TO_SYNC_ID.set(match.id, rTab.sId);
-                    SYNC_ID_TO_TAB_ID.set(rTab.sId, match.id);
-                    trackedTabIds.add(match.id);
-                    fileLog(`Adopted existing tab: ${rTab.url} (${rTab.sId})`, 'SYNC');
-                    adopted = true;
-                }
-            }
+    // Process added tabs
+    for (const rTab of diff.added) {
+        if (SYNC_ID_TO_TAB_ID.has(rTab.sId)) {
+            continue; // already tracked locally
+        }
 
-            if (!adopted) {
-                try {
-                    const newTab = await browser.tabs.create({
-                        url: rTab.url,
-                        windowId: syncWindowId,
-                        pinned: rTab.pinned || false,
-                        active: false
-                    });
-                    if (rTab.muted) {
-                        try {
-                            await browser.tabs.update(newTab.id, { muted: true });
-                        } catch (e) {
-                            // tab might be gone
-                        }
+        // Try to adopt an existing untracked tab with same URL
+        let adopted = false;
+        if (rTab.url && rTab.url !== 'about:blank') {
+            const match = localTabs.find(lt =>
+                !trackedTabIds.has(lt.id) &&
+                !isPrivilegedUrl(lt.url) &&
+                normalizeUrl(lt.url) === rTab.url &&
+                lt.pinned === (rTab.pinned || false) &&
+                Math.abs(lt.index - (rTab.index || 0)) <= INDEX_MATCH_TOLERANCE
+            );
+            if (match) {
+                TAB_ID_TO_SYNC_ID.set(match.id, rTab.sId);
+                SYNC_ID_TO_TAB_ID.set(rTab.sId, match.id);
+                trackedTabIds.add(match.id);
+                fileLog(`Adopted existing tab: ${rTab.url} (${rTab.sId})`, 'SYNC');
+                adopted = true;
+            }
+        }
+
+        if (!adopted) {
+            try {
+                const newTab = await browser.tabs.create({
+                    url: rTab.url,
+                    windowId: syncWindowId,
+                    pinned: rTab.pinned || false,
+                    active: false
+                });
+                if (rTab.muted) {
+                    try {
+                        await browser.tabs.update(newTab.id, { muted: true });
+                    } catch (e) {
+                        // tab might be gone
                     }
-                    TAB_ID_TO_SYNC_ID.set(newTab.id, rTab.sId);
-                    SYNC_ID_TO_TAB_ID.set(rTab.sId, newTab.id);
-                    // Record for redirect suppression
-                    recentlySyncedUrls.set(rTab.sId, { url: rTab.url, at: Date.now() });
-                    fileLog(`Created tab: ${rTab.url} (${rTab.sId})`, 'SYNC');
-                    added++;
-                } catch (e) {
-                    console.warn(`[SYNC] Failed to create tab ${rTab.url}:`, e.message);
+                }
+                TAB_ID_TO_SYNC_ID.set(newTab.id, rTab.sId);
+                SYNC_ID_TO_TAB_ID.set(rTab.sId, newTab.id);
+                // Record for redirect suppression
+                recentlySyncedUrls.set(rTab.sId, { url: rTab.url, at: Date.now() });
+                fileLog(`Created tab: ${rTab.url} (${rTab.sId})`, 'SYNC');
+                added++;
+            } catch (e) {
+                console.warn(`[SYNC] Failed to create tab ${rTab.url}:`, e.message);
+            }
+        }
+    }
+
+    // Process updated tabs
+    for (const { sId, changes, tab: rTab } of diff.updated) {
+        if (!SYNC_ID_TO_TAB_ID.has(sId)) {
+            continue;
+        }
+        const localTabId = SYNC_ID_TO_TAB_ID.get(sId);
+        const updates = { ...changes };
+
+        // Only update URL if the local tab doesn't already have it.
+        // Without this check, when B echoes A's URL back, A would
+        // redundantly record a recentlySyncedUrls entry that suppresses
+        // subsequent user navigation on A.
+        if (updates.url) {
+            if (updates.url === 'about:blank') {
+                delete updates.url;
+            } else {
+                const localTab = localTabs.find(t => t.id === localTabId);
+                if (localTab && normalizeUrl(localTab.url) === rTab.url) {
+                    delete updates.url;
                 }
             }
-        } else if (SYNC_ID_TO_TAB_ID.has(rTab.sId)) {
-            // Existing tab -- check for property changes
-            const localTabId = SYNC_ID_TO_TAB_ID.get(rTab.sId);
-            const prevTab = prevState.get(rTab.sId);
-            if (prevTab) {
-                const updates = {};
-                if (prevTab.url !== rTab.url && rTab.url !== 'about:blank') {
-                    // Only update if the local tab doesn't already have this URL.
-                    // Without this check, when B echoes A's URL back, A would
-                    // redundantly record a recentlySyncedUrls entry that suppresses
-                    // subsequent user navigation on A.
-                    const localTab = localTabs.find(t => t.id === localTabId);
-                    if (!localTab || normalizeUrl(localTab.url) !== rTab.url) {
-                        updates.url = rTab.url;
-                    }
-                }
-                if (prevTab.pinned !== rTab.pinned) {
-                    updates.pinned = rTab.pinned;
-                }
-                if (prevTab.muted !== rTab.muted) {
-                    updates.muted = rTab.muted;
-                }
-                // Bounce detection: Skip recently seen URLs for this tab.
+        }
+
+        // Bounce detection: Skip recently seen URLs for this tab.
+        if (updates.url) {
+            const history = syncUrlHistory.get(sId);
+            if (history && (Date.now() - history.lastUpdated) < BOUNCE_DETECTION_WINDOW_MS
+                && history.urls.includes(updates.url)) {
+                console.log(`[SYNC] Bounce detected for ${sId}, skipping URL ${updates.url}`);
+                fileLog(`Bounce detected for ${sId}, skipping URL ${updates.url}`, 'SYNC');
+                delete updates.url;
+            }
+        }
+
+        if (Object.keys(updates).length > 0) {
+            try {
+                await browser.tabs.update(localTabId, updates);
+                // Saves URLs for redirect/bounce prevention.
                 if (updates.url) {
-                    const history = syncUrlHistory.get(rTab.sId);
-                    if (history && (Date.now() - history.lastUpdated) < BOUNCE_DETECTION_WINDOW_MS
-                        && history.urls.includes(updates.url)) {
-                        console.log(`[SYNC] Bounce detected for ${rTab.sId}, skipping URL ${updates.url}`);
-                        fileLog(`Bounce detected for ${rTab.sId}, skipping URL ${updates.url}`, 'SYNC');
-                        delete updates.url;
+                    recentlySyncedUrls.set(sId, { url: updates.url, at: Date.now() });
+                    const history = syncUrlHistory.get(sId) || { urls: [], lastUpdated: 0 };
+                    history.urls.push(updates.url);
+                    if (history.urls.length > BOUNCE_MAX_HISTORY) {
+                        history.urls.shift();
                     }
+                    history.lastUpdated = Date.now();
+                    syncUrlHistory.set(sId, history);
                 }
-                if (Object.keys(updates).length > 0) {
-                    try {
-                        await browser.tabs.update(localTabId, updates);
-                        // Saves URLs for redirect/bounce prevention.
-                        if (updates.url) {
-                            recentlySyncedUrls.set(rTab.sId, { url: updates.url, at: Date.now() });
-                            const history = syncUrlHistory.get(rTab.sId) || { urls: [], lastUpdated: 0 };
-                            history.urls.push(updates.url);
-                            if (history.urls.length > BOUNCE_MAX_HISTORY) {
-                                history.urls.shift();
-                            }
-                            history.lastUpdated = Date.now();
-                            syncUrlHistory.set(rTab.sId, history);
-                        }
-                        fileLog(`Updated tab: ${JSON.stringify(updates)} (${rTab.sId})`, 'SYNC');
-                        updated++;
-                    } catch (e) {
-                        fileLog(`Tab gone during update (${rTab.sId}): ${e.message}`, 'SYNC');
-                    }
-                }
+                fileLog(`Updated tab: ${JSON.stringify(updates)} (${sId})`, 'SYNC');
+                updated++;
+            } catch (e) {
+                fileLog(`Tab gone during update (${sId}): ${e.message}`, 'SYNC');
             }
         }
     }
@@ -545,43 +606,42 @@ async function syncAddedAndUpdatedTabs(remoteTabs, prevState, prevSyncIds) {
 }
 
 // Removes local tabs that the remote peer closed. Returns count of removed tabs.
-async function syncRemovedTabs(prevState, currentRemoteSyncIds) {
+// Takes removedSyncIds array from computeRemoteDiff().
+async function syncRemovedTabs(removedSyncIds) {
     let removed = 0;
     let remainingTabCount = (await browser.tabs.query({ windowId: syncWindowId })).length;
 
-    for (const [syncId] of prevState) {
-        if (!currentRemoteSyncIds.has(syncId)) {
-            const localTabId = SYNC_ID_TO_TAB_ID.get(syncId);
-            if (localTabId) {
-                try {
-                    const tab = await browser.tabs.get(localTabId);
-                    if (isPrivilegedUrl(tab.url)) {
-                        fileLog(`Skipping removal of privileged tab: ${tab.url} (${syncId})`, 'SYNC');
-                        TAB_ID_TO_SYNC_ID.delete(localTabId);
-                        SYNC_ID_TO_TAB_ID.delete(syncId);
-                        continue;
-                    }
-                } catch (e) {
-                    fileLog(`Tab already gone during removal check (${syncId}): ${e.message}`, 'SYNC');
+    for (const syncId of removedSyncIds) {
+        const localTabId = SYNC_ID_TO_TAB_ID.get(syncId);
+        if (localTabId) {
+            try {
+                const tab = await browser.tabs.get(localTabId);
+                if (isPrivilegedUrl(tab.url)) {
+                    fileLog(`Skipping removal of privileged tab: ${tab.url} (${syncId})`, 'SYNC');
                     TAB_ID_TO_SYNC_ID.delete(localTabId);
                     SYNC_ID_TO_TAB_ID.delete(syncId);
                     continue;
                 }
-                if (remainingTabCount <= 1) {
-                    fileLog(`Skipping tab removal - last tab protection: ${syncId}`, 'SYNC');
-                    continue;
-                }
-                try {
-                    await browser.tabs.remove(localTabId);
-                    remainingTabCount--;
-                    fileLog(`Removed tab closed by remote: ${syncId}`, 'SYNC');
-                    removed++;
-                } catch (e) {
-                    // already gone
-                }
+            } catch (e) {
+                fileLog(`Tab already gone during removal check (${syncId}): ${e.message}`, 'SYNC');
                 TAB_ID_TO_SYNC_ID.delete(localTabId);
                 SYNC_ID_TO_TAB_ID.delete(syncId);
+                continue;
             }
+            if (remainingTabCount <= 1) {
+                fileLog(`Skipping tab removal - last tab protection: ${syncId}`, 'SYNC');
+                continue;
+            }
+            try {
+                await browser.tabs.remove(localTabId);
+                remainingTabCount--;
+                fileLog(`Removed tab closed by remote: ${syncId}`, 'SYNC');
+                removed++;
+            } catch (e) {
+                // already gone
+            }
+            TAB_ID_TO_SYNC_ID.delete(localTabId);
+            SYNC_ID_TO_TAB_ID.delete(syncId);
         }
     }
 
@@ -695,16 +755,15 @@ async function syncGroupsIncremental(remoteTabs, remoteGroups, prevState) {
 async function performIncrementalSync(remoteState) {
     const remotePeerId = remoteState.peerId;
     const remoteTabs = remoteState.tabs;
-    const currentRemoteSyncIds = new Set(remoteTabs.map(t => t.sId));
     const remoteTabMap = new Map(remoteTabs.map(t => [t.sId, t]));
 
     const prevState = lastKnownRemoteState.get(remotePeerId) || new Map();
-    const prevSyncIds = new Set(prevState.keys());
+    const diff = computeRemoteDiff(remoteTabs, prevState);
 
-    fileLog(`Incremental sync: ${remoteTabs.length} remote tabs (prev: ${prevSyncIds.size})`, 'SYNC');
+    fileLog(`Incremental sync: ${remoteTabs.length} remote tabs (prev: ${prevState.size})`, 'SYNC');
 
-    const addUpdate = await syncAddedAndUpdatedTabs(remoteTabs, prevState, prevSyncIds);
-    const removed = await syncRemovedTabs(prevState, currentRemoteSyncIds);
+    const addUpdate = await syncAddedAndUpdatedTabs(remoteTabs, prevState, diff);
+    const removed = await syncRemovedTabs(diff.removed);
 
     const reordered = await reorderTabs(remoteTabs);
 
@@ -869,4 +928,8 @@ async function processSyncData(remoteState) {
     }
 
     lastRemoteSyncTime = remoteState.timestamp;
+}
+
+if (typeof module !== 'undefined') {
+    module.exports = { computeAtomicMerge, computeRemoteDiff };
 }
