@@ -802,6 +802,11 @@ async function performIncrementalSync(remoteState) {
 
     const groupsChanged = await syncGroupsIncremental(remoteTabs, remoteState.groups, prevState);
 
+    // Reorder if tab groups have changed to maintain a stable order.
+    if (groupsChanged) {
+        await reorderTabs(remoteTabs);
+    }
+
     const changed = addUpdate.added > 0 || addUpdate.updated > 0 || removed > 0 || reordered || groupsChanged;
 
     lastKnownRemoteState.set(remotePeerId, remoteTabMap);

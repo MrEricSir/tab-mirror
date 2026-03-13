@@ -146,8 +146,10 @@ async function testDisconnectNotificationAfterDelay(browserA, browserB) {
   console.log(`  Notifications after reconnect: ${connectCount} (should have connect notification)`);
   await Assert.isTrue(connectCount >= 1, 'Should have at least 1 connect notification');
 
-  // Prevent race with notification timer.
+  // Prevent race with notification timer: pause discovery on both sides
+  // so B doesn't reconnect to A and cancel the pending disconnect timer.
   await browserA.testBridge.pauseDiscovery();
+  await browserB.testBridge.pauseDiscovery();
 
   // Disconnect A from B
   console.log('  Disconnecting A from B...');
@@ -167,6 +169,7 @@ async function testDisconnectNotificationAfterDelay(browserA, browserB) {
 
   // Resume discovery so subsequent tests can reconnect
   await browserA.testBridge.resumeDiscovery();
+  await browserB.testBridge.resumeDiscovery();
 
   // notifiedPeers clearing is verified in the "Enables Fresh Reconnect" test.
   // We can't check it here because B may have already auto-reconnected,
