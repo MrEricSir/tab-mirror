@@ -22,10 +22,9 @@ browser.tabs.onRemoved.addListener((tabId, removeInfo) => {
     }
     console.log(`[TAB] Removed: ${tabId}`);
     // Clean up mappings
-    const syncId = TAB_ID_TO_SYNC_ID.get(tabId);
+    const syncId = tabSyncIds.getByA(tabId);
     if (syncId) {
-        TAB_ID_TO_SYNC_ID.delete(tabId);
-        SYNC_ID_TO_TAB_ID.delete(syncId);
+        tabSyncIds.deleteByA(tabId);
     }
     trigger(BROADCAST_DEBOUNCE_FAST_MS);
 });
@@ -41,7 +40,7 @@ browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     // suppress the outgoing broadcast so the redirect doesn't "bounce" back.
     // Removed after a brief suppression window has elapsesd.
     if (changeInfo.url) {
-        const sId = TAB_ID_TO_SYNC_ID.get(tabId);
+        const sId = tabSyncIds.getByA(tabId);
         if (sId) {
             const recent = recentlySyncedUrls.get(sId);
             if (recent) {
@@ -90,10 +89,9 @@ browser.tabs.onDetached.addListener((tabId, detachInfo) => {
         return;
     }
     // Tab was dragged out of the sync window, clean up its mappings
-    const syncId = TAB_ID_TO_SYNC_ID.get(tabId);
+    const syncId = tabSyncIds.getByA(tabId);
     if (syncId) {
-        TAB_ID_TO_SYNC_ID.delete(tabId);
-        SYNC_ID_TO_TAB_ID.delete(syncId);
+        tabSyncIds.deleteByA(tabId);
     }
     trigger(BROADCAST_DEBOUNCE_FAST_MS);
 });
@@ -107,11 +105,10 @@ if (browser.tabGroups) {
         if (group.windowId !== syncWindowId) {
             return;
         }
-        let gSyncId = GROUP_ID_TO_SYNC_ID.get(group.id);
+        let gSyncId = groupSyncIds.getByA(group.id);
         if (!gSyncId) {
             gSyncId = generateSyncId('gsid_');
-            GROUP_ID_TO_SYNC_ID.set(group.id, gSyncId);
-            SYNC_ID_TO_GROUP_ID.set(gSyncId, group.id);
+            groupSyncIds.set(group.id, gSyncId);
         }
         localGroupChanges.set(gSyncId, Date.now());
         trigger(BROADCAST_DEBOUNCE_MS);
@@ -124,7 +121,7 @@ if (browser.tabGroups) {
         if (group.windowId !== syncWindowId) {
             return;
         }
-        const gSyncId = GROUP_ID_TO_SYNC_ID.get(group.id);
+        const gSyncId = groupSyncIds.getByA(group.id);
         if (gSyncId) {
             localGroupChanges.set(gSyncId, Date.now());
         }
@@ -138,10 +135,9 @@ if (browser.tabGroups) {
         if (group.windowId !== syncWindowId) {
             return;
         }
-        const gSyncId = GROUP_ID_TO_SYNC_ID.get(group.id);
+        const gSyncId = groupSyncIds.getByA(group.id);
         if (gSyncId) {
-            GROUP_ID_TO_SYNC_ID.delete(group.id);
-            SYNC_ID_TO_GROUP_ID.delete(gSyncId);
+            groupSyncIds.deleteByA(group.id);
             localGroupChanges.delete(gSyncId);
         }
         trigger(BROADCAST_DEBOUNCE_MS);
@@ -167,11 +163,8 @@ async function adoptSyncWindow(winId) {
     console.log(`[WINDOW] Adopted sync window: ${winId}`);
     fileLog(`Adopted sync window: ${winId}`, 'WINDOW');
     // Re-map tabs in the new window
-    TAB_ID_TO_SYNC_ID.clear();
-    SYNC_ID_TO_TAB_ID.clear();
-    GROUP_ID_TO_SYNC_ID.clear();
-    SYNC_ID_TO_GROUP_ID.clear();
-    lastSeenGroupProps.clear();
+    tabSyncIds.clear();
+    clearGroupState();
     // Clear remote state queue
     pendingSyncQueue = [];
     // Force both sides to perform fresh merge on next sync:
@@ -290,7 +283,7 @@ try {
 // Fallback: detect time jumps > 2 minutes (covers cases idle API misses)
 setInterval(() => {
     const now = Date.now();
-    if (now - lastTickTime > SLEEP_DETECTION_THRESHOLD_MS) {
+    if (didWakeFromSleep(now, lastTickTime, SLEEP_DETECTION_THRESHOLD_MS)) {
         handleWake();
     }
     lastTickTime = now;
@@ -318,7 +311,7 @@ function runHealthCheck() {
             }, RECONNECT_DELAY_MS);
         } else {
             const lastTime = lastMessageTime.get(peerId) || 0;
-            if (lastTime > 0 && (now - lastTime) > stalePeerTimeout) {
+            if (isConnectionStale(lastTime, now, stalePeerTimeout)) {
                 console.log(`[HEALTH] Stale peer detected: ${peerId} (${Math.round((now - lastTime) / 1000)}s since last message)`);
                 fileLog(`Stale peer detected: ${peerId} (${Math.round((now - lastTime) / 1000)}s silent)`, 'HEALTH');
                 try {

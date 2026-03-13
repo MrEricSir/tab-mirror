@@ -85,11 +85,10 @@ async function captureLocalState() {
         try {
             const groups = await browser.tabGroups.query({ windowId: syncWindowId });
             for (const group of groups) {
-                let gSyncId = GROUP_ID_TO_SYNC_ID.get(group.id);
+                let gSyncId = groupSyncIds.getByA(group.id);
                 if (!gSyncId) {
                     gSyncId = generateSyncId('gsid_');
-                    GROUP_ID_TO_SYNC_ID.set(group.id, gSyncId);
-                    SYNC_ID_TO_GROUP_ID.set(gSyncId, group.id);
+                    groupSyncIds.set(group.id, gSyncId);
                 }
                 // Only keep groups that actually have tabs
                 const groupTabs = syncableTabs.filter(t => t.groupId === group.id);
@@ -115,11 +114,10 @@ async function captureLocalState() {
     }
 
     const tabData = syncableTabs.map(t => {
-        let sId = TAB_ID_TO_SYNC_ID.get(t.id);
+        let sId = tabSyncIds.getByA(t.id);
         if (!sId) {
             sId = generateSyncId('sid_');
-            TAB_ID_TO_SYNC_ID.set(t.id, sId);
-            SYNC_ID_TO_TAB_ID.set(sId, t.id);
+            tabSyncIds.set(t.id, sId);
         }
         const tabInfo = {
             sId,
@@ -130,7 +128,7 @@ async function captureLocalState() {
         };
         // Add group sync ID if tab is in a group
         if (browser.tabGroups && t.groupId !== undefined && t.groupId !== -1) {
-            const gSyncId = GROUP_ID_TO_SYNC_ID.get(t.groupId);
+            const gSyncId = groupSyncIds.getByA(t.groupId);
             if (gSyncId) {
                 tabInfo.groupSyncId = gSyncId;
             }
@@ -311,7 +309,7 @@ async function reorderTabs(remoteTabs) {
     // Map remote tabs to local IDs in remote order
     const targetSyncedOrder = [];
     for (const rt of remoteTabs) {
-        const localId = SYNC_ID_TO_TAB_ID.get(rt.sId);
+        const localId = tabSyncIds.getByB(rt.sId);
         if (localId !== undefined && !privilegedTabIds.has(localId)) {
             targetSyncedOrder.push(localId);
         }
@@ -373,8 +371,7 @@ async function adoptOrCreateTabs(targetTabs, syncableTabs) {
 
         if (match) {
             adoptedTabIds.add(match.id);
-            TAB_ID_TO_SYNC_ID.set(match.id, tab.sId);
-            SYNC_ID_TO_TAB_ID.set(tab.sId, match.id);
+            tabSyncIds.set(match.id, tab.sId);
             if (tab.muted && !(match.mutedInfo && match.mutedInfo.muted)) {
                 try {
                     await browser.tabs.update(match.id, { muted: true });
@@ -398,8 +395,7 @@ async function adoptOrCreateTabs(targetTabs, syncableTabs) {
                         // tab might be gone
                     }
                 }
-                TAB_ID_TO_SYNC_ID.set(newTab.id, tab.sId);
-                SYNC_ID_TO_TAB_ID.set(tab.sId, newTab.id);
+                tabSyncIds.set(newTab.id, tab.sId);
                 fileLog(`Created new tab: ${tab.url} (${tab.sId})`, 'REPLACE');
             } catch (e) {
                 console.warn(`[REPLACE] Failed to create tab ${tab.url}:`, e.message);
@@ -415,7 +411,7 @@ async function createTargetGroups(targetTabs, targetGroups) {
         return;
     }
     try {
-        const groupedTabs = buildTabGroupingMap(targetTabs, targetGroups, SYNC_ID_TO_TAB_ID);
+        const groupedTabs = buildTabGroupingMap(targetTabs, targetGroups, { get: (sId) => tabSyncIds.getByB(sId) });
 
         for (const [gSyncId, tabIds] of Object.entries(groupedTabs)) {
             if (tabIds.length === 0) {
@@ -428,8 +424,7 @@ async function createTargetGroups(targetTabs, targetGroups) {
                     title: groupInfo.title || '',
                     color: groupInfo.color || 'grey'
                 });
-                GROUP_ID_TO_SYNC_ID.set(groupId, gSyncId);
-                SYNC_ID_TO_GROUP_ID.set(gSyncId, groupId);
+                groupSyncIds.set(groupId, gSyncId);
                 localGroupChanges.set(gSyncId, groupInfo.lastModified || Date.now());
             } catch (e) {
                 fileLog(`Failed to create group ${gSyncId}: ${e.message}`, 'REPLACE');
@@ -448,11 +443,8 @@ async function replaceLocalState(targetTabs, targetGroups = {}) {
     const syncableTabs = allTabs.filter(t => !isPrivilegedUrl(t.url));
 
     // Clear mappings
-    TAB_ID_TO_SYNC_ID.clear();
-    SYNC_ID_TO_TAB_ID.clear();
-    GROUP_ID_TO_SYNC_ID.clear();
-    SYNC_ID_TO_GROUP_ID.clear();
-    lastSeenGroupProps.clear();
+    tabSyncIds.clear();
+    clearGroupState();
 
     // Adopt existing tabs or create new ones
     const adoptedTabIds = await adoptOrCreateTabs(targetTabs, syncableTabs);
@@ -490,8 +482,8 @@ async function replaceLocalState(targetTabs, targetGroups = {}) {
     // Create tab groups
     await createTargetGroups(targetTabs, targetGroups);
 
-    console.log(`[REPLACE] Done. ${TAB_ID_TO_SYNC_ID.size} tabs created.`);
-    fileLog(`Replaced: ${TAB_ID_TO_SYNC_ID.size} tabs`, 'REPLACE');
+    console.log(`[REPLACE] Done. ${tabSyncIds.size} tabs created.`);
+    fileLog(`Replaced: ${tabSyncIds.size} tabs`, 'REPLACE');
 }
 
 // Pure Remote Diff
@@ -547,13 +539,13 @@ function computeRemoteDiff(remoteTabs, prevRemoteState) {
 // diff parameter: Output from computeRemoteDiff()
 async function syncAddedAndUpdatedTabs(remoteTabs, prevState, diff) {
     const localTabs = await browser.tabs.query({ windowId: syncWindowId });
-    const trackedTabIds = new Set(TAB_ID_TO_SYNC_ID.keys());
+    const trackedTabIds = new Set(tabSyncIds.keys());
     let added = 0;
     let updated = 0;
 
     // Process added tabs
     for (const rTab of diff.added) {
-        if (SYNC_ID_TO_TAB_ID.has(rTab.sId)) {
+        if (tabSyncIds.hasB(rTab.sId)) {
             continue; // already tracked locally
         }
 
@@ -562,8 +554,7 @@ async function syncAddedAndUpdatedTabs(remoteTabs, prevState, diff) {
         {
             const match = findMatchingLocalTab(localTabs, rTab, trackedTabIds, INDEX_MATCH_TOLERANCE);
             if (match) {
-                TAB_ID_TO_SYNC_ID.set(match.id, rTab.sId);
-                SYNC_ID_TO_TAB_ID.set(rTab.sId, match.id);
+                tabSyncIds.set(match.id, rTab.sId);
                 trackedTabIds.add(match.id);
                 fileLog(`Adopted existing tab: ${rTab.url} (${rTab.sId})`, 'SYNC');
                 adopted = true;
@@ -585,8 +576,7 @@ async function syncAddedAndUpdatedTabs(remoteTabs, prevState, diff) {
                         // tab might be gone
                     }
                 }
-                TAB_ID_TO_SYNC_ID.set(newTab.id, rTab.sId);
-                SYNC_ID_TO_TAB_ID.set(rTab.sId, newTab.id);
+                tabSyncIds.set(newTab.id, rTab.sId);
                 // Record for redirect suppression
                 recentlySyncedUrls.set(rTab.sId, { url: rTab.url, at: Date.now() });
                 fileLog(`Created tab: ${rTab.url} (${rTab.sId})`, 'SYNC');
@@ -599,10 +589,10 @@ async function syncAddedAndUpdatedTabs(remoteTabs, prevState, diff) {
 
     // Process updated tabs
     for (const { sId, changes, tab: rTab } of diff.updated) {
-        if (!SYNC_ID_TO_TAB_ID.has(sId)) {
+        if (!tabSyncIds.hasB(sId)) {
             continue;
         }
-        const localTabId = SYNC_ID_TO_TAB_ID.get(sId);
+        const localTabId = tabSyncIds.getByB(sId);
         const updates = { ...changes };
 
         // Only update URL if the local tab doesn't already have it.
@@ -661,20 +651,18 @@ async function syncRemovedTabs(removedSyncIds) {
     let remainingTabCount = (await browser.tabs.query({ windowId: syncWindowId })).length;
 
     for (const syncId of removedSyncIds) {
-        const localTabId = SYNC_ID_TO_TAB_ID.get(syncId);
+        const localTabId = tabSyncIds.getByB(syncId);
         if (localTabId) {
             try {
                 const tab = await browser.tabs.get(localTabId);
                 if (isPrivilegedUrl(tab.url)) {
                     fileLog(`Skipping removal of privileged tab: ${tab.url} (${syncId})`, 'SYNC');
-                    TAB_ID_TO_SYNC_ID.delete(localTabId);
-                    SYNC_ID_TO_TAB_ID.delete(syncId);
+                    tabSyncIds.deleteByB(syncId);
                     continue;
                 }
             } catch (e) {
                 fileLog(`Tab already gone during removal check (${syncId}): ${e.message}`, 'SYNC');
-                TAB_ID_TO_SYNC_ID.delete(localTabId);
-                SYNC_ID_TO_TAB_ID.delete(syncId);
+                tabSyncIds.deleteByB(syncId);
                 continue;
             }
             if (remainingTabCount <= 1) {
@@ -689,8 +677,7 @@ async function syncRemovedTabs(removedSyncIds) {
             } catch (e) {
                 // already gone
             }
-            TAB_ID_TO_SYNC_ID.delete(localTabId);
-            SYNC_ID_TO_TAB_ID.delete(syncId);
+            tabSyncIds.deleteByB(syncId);
         }
     }
 
@@ -706,7 +693,7 @@ async function syncGroupsIncremental(remoteTabs, remoteGroups, prevState) {
 
     try {
         for (const rTab of remoteTabs) {
-            const localTabId = SYNC_ID_TO_TAB_ID.get(rTab.sId);
+            const localTabId = tabSyncIds.getByB(rTab.sId);
             if (!localTabId) {
                 continue;
             }
@@ -714,7 +701,7 @@ async function syncGroupsIncremental(remoteTabs, remoteGroups, prevState) {
             if (rTab.groupSyncId && remoteGroups[rTab.groupSyncId]) {
                 // Tab should be in a group
                 const gSyncId = rTab.groupSyncId;
-                let localGroupId = SYNC_ID_TO_GROUP_ID.get(gSyncId);
+                let localGroupId = groupSyncIds.getByB(gSyncId);
 
                 if (localGroupId === undefined) {
                     // Create new group
@@ -724,8 +711,7 @@ async function syncGroupsIncremental(remoteTabs, remoteGroups, prevState) {
                         title: groupInfo.title || '',
                         color: groupInfo.color || 'grey'
                     });
-                    GROUP_ID_TO_SYNC_ID.set(localGroupId, gSyncId);
-                    SYNC_ID_TO_GROUP_ID.set(gSyncId, localGroupId);
+                    groupSyncIds.set(localGroupId, gSyncId);
                     localGroupChanges.set(gSyncId, groupInfo.lastModified || Date.now());
                     changed = true;
                 } else {
@@ -739,16 +725,14 @@ async function syncGroupsIncremental(remoteTabs, remoteGroups, prevState) {
                             } catch (groupErr) {
                                 // Group was probably destroyed by reorderTabs (tabs.move removes tabs from groups).
                                 fileLog(`Group ${gSyncId} gone (destroyed by reorder?), recreating`, 'SYNC');
-                                GROUP_ID_TO_SYNC_ID.delete(localGroupId);
-                                SYNC_ID_TO_GROUP_ID.delete(gSyncId);
+                                groupSyncIds.deleteByB(gSyncId);
                                 const groupInfo = remoteGroups[gSyncId];
                                 localGroupId = await browser.tabs.group({ tabIds: [localTabId] });
                                 await browser.tabGroups.update(localGroupId, {
                                     title: groupInfo.title || '',
                                     color: groupInfo.color || 'grey'
                                 });
-                                GROUP_ID_TO_SYNC_ID.set(localGroupId, gSyncId);
-                                SYNC_ID_TO_GROUP_ID.set(gSyncId, localGroupId);
+                                groupSyncIds.set(localGroupId, gSyncId);
                                 localGroupChanges.set(gSyncId, groupInfo.lastModified || Date.now());
                                 changed = true;
                             }
@@ -910,12 +894,12 @@ async function processSyncData(remoteState) {
 
         // See if the remote already merged with us
         // (their state contains our sync IDs)
-        const mySyncIds = new Set(TAB_ID_TO_SYNC_ID.values());
+        const mySyncIds = new Set(tabSyncIds.values());
         const remoteSyncIds = new Set(remoteState.tabs.map(t => t.sId));
         const overlap = [...mySyncIds].filter(id => remoteSyncIds.has(id));
         const remoteAlreadyMerged = mySyncIds.size > 0 && overlap.length === mySyncIds.size;
 
-        const localTabsBefore = TAB_ID_TO_SYNC_ID.size;
+        const localTabsBefore = tabSyncIds.size;
 
         if (remoteAlreadyMerged) {
             // Remote already has all our tabs, just adopt their state
@@ -928,7 +912,7 @@ async function processSyncData(remoteState) {
             await performAtomicMerge(myState, remoteState);
         }
 
-        const localTabsAfter = TAB_ID_TO_SYNC_ID.size;
+        const localTabsAfter = tabSyncIds.size;
         syncHistory.push({
             time: Date.now(),
             peer: remoteState.peerId,
@@ -1000,7 +984,7 @@ async function persistSyncState(broadcastTabs) {
 
     // Serialize group mappings
     const groupSyncIdMappings = [];
-    for (const [groupId, gSyncId] of GROUP_ID_TO_SYNC_ID) {
+    for (const [groupId, gSyncId] of groupSyncIds) {
         const props = lastSeenGroupProps.get(gSyncId);
         if (props) {
             groupSyncIdMappings.push({
@@ -1054,8 +1038,7 @@ async function restoreSyncMappings() {
 
     // Restore tab sync ID mappings
     for (const { tabId, sId } of matched) {
-        TAB_ID_TO_SYNC_ID.set(tabId, sId);
-        SYNC_ID_TO_TAB_ID.set(sId, tabId);
+        tabSyncIds.set(tabId, sId);
     }
 
     console.log(`[RESTORE] Restored ${matched.length} tab mappings (${unmatched.length} unmatched)`);
@@ -1075,8 +1058,7 @@ async function restoreSyncMappings() {
                     (g.color || 'grey') === pg.color
                 );
                 if (match) {
-                    GROUP_ID_TO_SYNC_ID.set(match.id, pg.gSyncId);
-                    SYNC_ID_TO_GROUP_ID.set(pg.gSyncId, match.id);
+                    groupSyncIds.set(match.id, pg.gSyncId);
                     lastSeenGroupProps.set(pg.gSyncId, { title: pg.title, color: pg.color });
                     usedGroupIds.add(match.id);
                 }
@@ -1171,10 +1153,9 @@ async function applyTombstones() {
                 remainingCount--;
                 removed++;
                 // Clean up sync ID mappings
-                const sId = TAB_ID_TO_SYNC_ID.get(tab.id);
+                const sId = tabSyncIds.getByA(tab.id);
                 if (sId) {
-                    TAB_ID_TO_SYNC_ID.delete(tab.id);
-                    SYNC_ID_TO_TAB_ID.delete(sId);
+                    tabSyncIds.deleteByA(tab.id);
                 }
                 fileLog(`Tombstone removed tab: ${tab.url} (pinned=${tab.pinned})`, 'TOMBSTONE');
             } catch (e) {

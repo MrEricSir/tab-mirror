@@ -24,6 +24,7 @@
   "background": {
     "scripts": [
       "peerjs.min.js",
+      "bimap.js",
       "background.js",
       "crypto.js",
       "pairing.js",
@@ -31,6 +32,7 @@
       "sync-engine.js",
       "message-external.js",
       "message-internal.js",
+      "init-helpers.js",
       "init.js"
     ]
   },

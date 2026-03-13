@@ -18,10 +18,10 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                         pendingSyncQueueLength: pendingSyncQueue.length,
                         lastRemoteSyncTime,
                         tabMappings: {
-                            tabIdToSyncId: Array.from(TAB_ID_TO_SYNC_ID),
-                            syncIdToTabId: Array.from(SYNC_ID_TO_TAB_ID),
-                            groupIdToSyncId: Array.from(GROUP_ID_TO_SYNC_ID),
-                            syncIdToGroupId: Array.from(SYNC_ID_TO_GROUP_ID)
+                            tabIdToSyncId: tabSyncIds.toJSON(),
+                            syncIdToTabId: tabSyncIds.toJSON().map(([a, b]) => [b, a]),
+                            groupIdToSyncId: groupSyncIds.toJSON(),
+                            syncIdToGroupId: groupSyncIds.toJSON().map(([a, b]) => [b, a])
                         }
                     }
                 };
@@ -60,8 +60,7 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 // Test-only: creates a sync ID mapping to a non-existent tab ID
                 // so tests can verify error logging when the tab is gone.
                 const { syncId, tabId } = message;
-                TAB_ID_TO_SYNC_ID.set(tabId, syncId);
-                SYNC_ID_TO_TAB_ID.set(syncId, tabId);
+                tabSyncIds.set(tabId, syncId);
                 return { success: true, data: 'Stale mapping created' };
             }
 
@@ -371,12 +370,8 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 connectionRetries.clear();
                 lastMessageTime.clear();
                 lastRemoteSyncTime = 0;
-                TAB_ID_TO_SYNC_ID.clear();
-                SYNC_ID_TO_TAB_ID.clear();
-                GROUP_ID_TO_SYNC_ID.clear();
-                SYNC_ID_TO_GROUP_ID.clear();
-                localGroupChanges.clear();
-                lastSeenGroupProps.clear();
+                tabSyncIds.clear();
+                clearGroupState();
                 recentlySyncedUrls.clear();
                 syncUrlHistory.clear();
                 pendingSyncQueue = [];

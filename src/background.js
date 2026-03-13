@@ -18,8 +18,8 @@
  *
  * State tracking:
  *   Each tab and group is assigned a stable sync ID (sId / gSyncId) that
- *   persists across broadcasts. Bidirectional maps (TAB_ID_TO_SYNC_ID,
- *   SYNC_ID_TO_TAB_ID, etc.) translate between Firefox IDs and sync IDs.
+ *   persists across broadcasts. BiMaps (tabSyncIds, groupSyncIds)
+ *   translate between Firefox IDs and sync IDs bidirectionally.
  *   Per peer, lastKnownRemoteState stores the most recent remote tab set
  *   so incremental sync can compute diffs.
  *
@@ -133,12 +133,17 @@ let syncUrlHistory = new Map();  // syncId -> { urls: string[], lastUpdated: num
 const BOUNCE_DETECTION_WINDOW_MS = 30000;
 const BOUNCE_MAX_HISTORY = 5;
 
-// Tab/Group sync ID mappings
-let TAB_ID_TO_SYNC_ID = new Map();
-let SYNC_ID_TO_TAB_ID = new Map();
-let GROUP_ID_TO_SYNC_ID = new Map();
-let SYNC_ID_TO_GROUP_ID = new Map();
+// Tab/Group sync ID mappings (bidirectional)
+let tabSyncIds = new BiMap();    // tabId <-> syncId
+let groupSyncIds = new BiMap();  // groupId <-> gSyncId
 let offlineTombstones = new Set(); // Keys for tabs deleted while disconnected.
+
+// Clears all group-related state in one call.
+function clearGroupState() {
+    groupSyncIds.clear();
+    lastSeenGroupProps.clear();
+    localGroupChanges.clear();
+}
 
 // Logging
 let logBuffer = [];
@@ -192,8 +197,8 @@ window.diag = async () => {
     console.log('Pending Dials:', Array.from(pendingDials));
     console.log('Retry States:', Array.from(connectionRetries.entries()));
     console.log('P2P Server:', !!(window.peer && !window.peer.disconnected));
-    console.log('Tab Map Size:', TAB_ID_TO_SYNC_ID.size);
-    console.log('Group Map Size:', GROUP_ID_TO_SYNC_ID.size);
+    console.log('Tab Map Size:', tabSyncIds.size);
+    console.log('Group Map Size:', groupSyncIds.size);
     console.log('Synced Peers:', Array.from(syncedPeers));
     console.log('Sync Counter:', syncCounter);
     console.log('Sync Window:', syncWindowId);
@@ -214,12 +219,8 @@ window.checkSync = async () => {
 
 window.forceSync = () => {
     console.log('[FORCESYNC] Purging mappings and re-broadcasting...');
-    TAB_ID_TO_SYNC_ID.clear();
-    SYNC_ID_TO_TAB_ID.clear();
-    GROUP_ID_TO_SYNC_ID.clear();
-    SYNC_ID_TO_GROUP_ID.clear();
-    localGroupChanges.clear();
-    lastSeenGroupProps.clear();
+    tabSyncIds.clear();
+    clearGroupState();
     broadcastState();
 };
 

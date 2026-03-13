@@ -17,7 +17,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
             lastSyncTime: lastRemoteSyncTime,
             syncPaused,
             syncWindowId,
-            tabCount: TAB_ID_TO_SYNC_ID.size,
+            tabCount: tabSyncIds.size,
             isProcessingRemote
         });
     }
@@ -30,8 +30,8 @@ browser.runtime.onMessage.addListener((message, sender) => {
             peers: knownPeers.length,
             connectedPeers: knownPeers,
             pendingDials: pendingDials.size,
-            tabMappings: TAB_ID_TO_SYNC_ID.size,
-            groupMappings: GROUP_ID_TO_SYNC_ID.size,
+            tabMappings: tabSyncIds.size,
+            groupMappings: groupSyncIds.size,
             isProcessingRemote,
             lastSyncTime: lastRemoteSyncTime > 0 ? new Date(lastRemoteSyncTime).toISOString() : 'never',
             syncCounter,
@@ -61,8 +61,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
         pendingDisconnectTimers.forEach(t => clearTimeout(t));
         pendingDisconnectTimers.clear();
         cancelPairing();
-        TAB_ID_TO_SYNC_ID.clear();
-        SYNC_ID_TO_TAB_ID.clear();
+        tabSyncIds.clear();
         offlineTombstones.clear();
         browser.storage.local.remove([
             'syncIdMappings', 'groupSyncIdMappings', 'lastBroadcastTabs', 'peerRemoteStates'

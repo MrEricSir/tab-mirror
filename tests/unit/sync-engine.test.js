@@ -9,6 +9,9 @@ globalThis.window = globalThis.window || {};
 globalThis.browser = globalThis.browser || {
     storage: { local: { set: () => Promise.resolve(), remove: () => Promise.resolve() } }
 };
+// BiMap is loaded as a separate script in the extension; make it available globally for Node
+const { BiMap } = require('../../src/bimap.js');
+globalThis.BiMap = BiMap;
 
 // Stubs needed by findMatchingLocalTab (uses isPrivilegedUrl / normalizeUrl globals)
 const bg = require('../../src/background.js');
