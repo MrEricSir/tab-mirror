@@ -673,5 +673,5 @@ setInterval(updateUI, 1000);
 updateUI();
 
 if (typeof module !== 'undefined') {
-    module.exports = { escapeHtml, formatRelativeTime, friendlyName, shortPlatform, displayName };
+    module.exports = { escapeHtml, formatRelativeTime, friendlyName, shortPlatform, displayName, formatDebugInfo, formatSyncHistory };
 }

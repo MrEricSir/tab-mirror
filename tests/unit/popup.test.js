@@ -77,7 +77,8 @@ const _origSetInterval = globalThis.setInterval;
 globalThis.setInterval = () => 0;
 
 const {
-    escapeHtml, formatRelativeTime, friendlyName, shortPlatform, displayName
+    escapeHtml, formatRelativeTime, friendlyName, shortPlatform, displayName,
+    formatDebugInfo, formatSyncHistory
 } = require('../../src/popup.js');
 
 // Restore setInterval for test runner
@@ -204,5 +205,121 @@ describe('displayName', () => {
         const result = displayName({ peerId: 'mirror-abc' });
         const friendly = friendlyName('mirror-abc');
         assert.equal(result, friendly);
+    });
+});
+
+// --- formatDebugInfo ---
+
+describe('formatDebugInfo', () => {
+    test('includes device ID, online status, and peer count', () => {
+        const result = formatDebugInfo({ id: 'dev-123', online: true, peers: 3 });
+        assert.ok(result.includes('Device ID: dev-123'));
+        assert.ok(result.includes('Online: true'));
+        assert.ok(result.includes('Active Peers: 3'));
+    });
+
+    test('shows "none" defaults for missing connectedPeers and syncedPeers', () => {
+        const result = formatDebugInfo({ id: 'x', online: false, peers: 0 });
+        assert.ok(result.includes('Known Peers: none'));
+        assert.ok(result.includes('Synced Peers: none'));
+    });
+
+    test('shows 0/false/never defaults for missing counters', () => {
+        const result = formatDebugInfo({ id: 'x', online: false, peers: 0 });
+        assert.ok(result.includes('Tab Mappings: 0'));
+        assert.ok(result.includes('Group Mappings: 0'));
+        assert.ok(result.includes('Processing Remote: false'));
+        assert.ok(result.includes('Last Sync: never'));
+        assert.ok(result.includes('Sync Counter: 0'));
+    });
+
+    test('lists paired devices when present', () => {
+        const result = formatDebugInfo({
+            id: 'x', online: true, peers: 1,
+            pairedDevices: [
+                { peerId: 'peer-1', name: 'Firefox on macOS' },
+                { peerId: 'peer-2', name: 'Firefox on Windows' }
+            ]
+        });
+        assert.ok(result.includes('Paired Devices: 2'));
+        assert.ok(result.includes('- peer-1 (Firefox on macOS)'));
+        assert.ok(result.includes('- peer-2 (Firefox on Windows)'));
+    });
+
+    test('lists authenticated peers when present', () => {
+        const result = formatDebugInfo({
+            id: 'x', online: true, peers: 1,
+            authenticatedPeers: ['peer-a', 'peer-b']
+        });
+        assert.ok(result.includes('Authenticated: peer-a, peer-b'));
+    });
+});
+
+// --- formatSyncHistory ---
+
+describe('formatSyncHistory', () => {
+    test('returns i18n key for empty history', () => {
+        assert.equal(formatSyncHistory([]), 'placeholderNoSyncEvents');
+    });
+
+    test('returns i18n key for null history', () => {
+        assert.equal(formatSyncHistory(null), 'placeholderNoSyncEvents');
+    });
+
+    test('formats a single sync event with time, name, changes, and type', () => {
+        const event = {
+            time: new Date('2025-01-15T10:30:00').getTime(),
+            peer: 'peer-1',
+            added: 2, removed: 1, updated: 0,
+            type: 'full'
+        };
+        const result = formatSyncHistory([event]);
+        const name = friendlyName('peer-1');
+        assert.ok(result.includes(name));
+        assert.ok(result.includes('+2'));
+        assert.ok(result.includes('-1'));
+        assert.ok(result.includes('(full)'));
+    });
+
+    test('shows added/removed/updated counts with +/-/~ prefixes', () => {
+        const event = {
+            time: Date.now(), peer: 'p',
+            added: 3, removed: 1, updated: 5,
+            type: 'incremental'
+        };
+        const result = formatSyncHistory([event]);
+        assert.ok(result.includes('+3'));
+        assert.ok(result.includes('-1'));
+        assert.ok(result.includes('~5'));
+    });
+
+    test('returns i18n key syncNoChanges when all change counts are 0', () => {
+        const event = {
+            time: Date.now(), peer: 'p',
+            added: 0, removed: 0, updated: 0,
+            type: 'full'
+        };
+        const result = formatSyncHistory([event]);
+        assert.ok(result.includes('syncNoChanges'));
+        assert.ok(!result.includes('+'));
+        assert.ok(!result.includes('-'));
+        assert.ok(!result.includes('~'));
+    });
+
+    test('reverses order so newest is first', () => {
+        const older = {
+            time: new Date('2025-01-01T08:00:00').getTime(),
+            peer: 'peer-old', added: 1, removed: 0, updated: 0, type: 'full'
+        };
+        const newer = {
+            time: new Date('2025-01-01T09:00:00').getTime(),
+            peer: 'peer-new', added: 0, removed: 1, updated: 0, type: 'full'
+        };
+        const result = formatSyncHistory([older, newer]);
+        const lines = result.split('\n');
+        assert.equal(lines.length, 2);
+        // Newer event should appear first
+        assert.ok(lines[0].includes(friendlyName('peer-new')));
+        assert.ok(lines[1].includes(friendlyName('peer-old')));
     });
 });
