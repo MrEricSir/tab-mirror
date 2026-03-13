@@ -293,6 +293,20 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 return { success: true, data: `Redirect suppression window set to ${message.ms}ms` };
             }
 
+            case 'setSyncPaused': {
+                const wasPaused = syncPaused;
+                syncPaused = !!message.paused;
+                browser.storage.local.set({ syncPaused });
+                if (wasPaused && !syncPaused) {
+                    broadcastState();
+                }
+                return { success: true, data: { paused: syncPaused } };
+            }
+
+            case 'getSyncPaused': {
+                return { success: true, data: { paused: syncPaused } };
+            }
+
             case 'muteOutgoing': {
                 outgoingMuted = message.muted;
                 return { success: true, data: `Outgoing muted: ${outgoingMuted}` };

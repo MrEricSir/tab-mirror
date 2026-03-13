@@ -140,6 +140,14 @@ class TabMirrorBridge extends TestBridge {
     return await this._sendToTabMirror({ action: 'setRedirectSuppressionWindow', ms });
   }
 
+  async setSyncPaused(paused) {
+    return await this._sendToTabMirror({ action: 'setSyncPaused', paused });
+  }
+
+  async getSyncPaused() {
+    return await this._sendToTabMirror({ action: 'getSyncPaused' });
+  }
+
   async muteOutgoing(muted) {
     return await this._sendToTabMirror({ action: 'muteOutgoing', muted });
   }

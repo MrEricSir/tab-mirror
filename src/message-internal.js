@@ -111,8 +111,12 @@ browser.runtime.onMessage.addListener((message, sender) => {
     }
 
     if (message.action === 'setSyncPaused') {
+        const wasPaused = syncPaused;
         syncPaused = !!message.paused;
         browser.storage.local.set({ syncPaused });
+        if (wasPaused && !syncPaused) {
+            broadcastState();
+        }
         return Promise.resolve({ success: true, paused: syncPaused });
     }
 
