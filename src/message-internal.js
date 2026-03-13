@@ -63,6 +63,10 @@ browser.runtime.onMessage.addListener((message, sender) => {
         cancelPairing();
         TAB_ID_TO_SYNC_ID.clear();
         SYNC_ID_TO_TAB_ID.clear();
+        offlineTombstones.clear();
+        browser.storage.local.remove([
+            'syncIdMappings', 'groupSyncIdMappings', 'lastBroadcastTabs', 'peerRemoteStates'
+        ]).catch(() => {});
         // Tear down PeerJS
         connections.forEach((conn) => {
             try {

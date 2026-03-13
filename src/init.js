@@ -181,6 +181,11 @@ async function adoptSyncWindow(winId) {
     await browser.storage.local.set({ syncedPeers: [] });
     // 2. Flag the next broadcast so the peer also resets to atomic merge.
     syncWindowChanged = true;
+    // Clear tombstones and persisted sync state for the old window
+    offlineTombstones.clear();
+    browser.storage.local.remove([
+        'syncIdMappings', 'groupSyncIdMappings', 'lastBroadcastTabs', 'peerRemoteStates'
+    ]).catch(() => {});
     await captureLocalState();
     trigger(BROADCAST_DEBOUNCE_FAST_MS);
 }
@@ -451,7 +456,14 @@ window.addEventListener('unload', () => {
         console.warn('[BOOT] Failed to select sync window:', e.message);
     }
 
-    // Assign sync IDs to pre-existing tabs
+    // Restore persisted sync state (mappings + remote state) so incremental
+    // sync works across restarts without falling back to atomic merge.
+    if (syncWindowId !== null) {
+        await restoreSyncMappings();
+        await restoreRemoteStates();
+    }
+
+    // Assign sync IDs to pre-existing tabs (skips tabs already restored above)
     await captureLocalState();
 
     // Start transport

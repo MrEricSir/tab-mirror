@@ -408,7 +408,9 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 // Clear disconnect timers again: may have triggered new accidentally?
                 pendingDisconnectTimers.forEach(t => clearTimeout(t));
                 pendingDisconnectTimers.clear();
-                // Re-assign sync IDs to existing tabs and reconnect
+                // Restore persisted state and re-assign sync IDs (matches real boot)
+                await restoreSyncMappings();
+                await restoreRemoteStates();
                 await captureLocalState();
                 setupPeerJS();
                 return { success: true, data: 'Restart simulated' };

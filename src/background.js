@@ -138,6 +138,7 @@ let TAB_ID_TO_SYNC_ID = new Map();
 let SYNC_ID_TO_TAB_ID = new Map();
 let GROUP_ID_TO_SYNC_ID = new Map();
 let SYNC_ID_TO_GROUP_ID = new Map();
+let offlineTombstones = new Set(); // Keys for tabs deleted while disconnected.
 
 // Logging
 let logBuffer = [];

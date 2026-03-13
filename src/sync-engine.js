@@ -33,6 +33,31 @@ function buildTabGroupingMap(targetTabs, targetGroups, syncIdToTabIdMap) {
     return groupedTabs;
 }
 
+// Pure: match live tabs to persisted sync ID mappings by url+pinned.
+// Returns { matched: [{tabId, sId}], unmatched: [{sId, url, pinned}] }
+// Greedy: each live tab matched at most once.
+function matchTabsToMappings(liveTabs, persistedMappings) {
+    const matched = [];
+    const usedTabIds = new Set();
+
+    for (const mapping of persistedMappings) {
+        const match = liveTabs.find(t =>
+            !usedTabIds.has(t.id) &&
+            t.url === mapping.url &&
+            t.pinned === mapping.pinned
+        );
+        if (match) {
+            matched.push({ tabId: match.id, sId: mapping.sId });
+            usedTabIds.add(match.id);
+        }
+    }
+
+    const matchedSids = new Set(matched.map(m => m.sId));
+    const unmatched = persistedMappings.filter(m => !matchedSids.has(m.sId));
+
+    return { matched, unmatched };
+}
+
 // Should a URL update be suppressed to prevent bounce loops?
 function shouldSuppressBounce(history, now, newUrl, bounceWindowMs) {
     if (!history) {
@@ -182,6 +207,9 @@ async function broadcastState() {
             }
         }
         broadcastStats.completed++;
+        persistSyncState(state.tabs).catch(e => {
+            console.warn('[PERSIST] Failed to persist sync state:', e.message);
+        });
     } catch (error) {
         console.error('[BROADCAST] Error:', error);
     } finally {
@@ -923,6 +951,11 @@ async function processSyncData(remoteState) {
 
         // Send the merged state back so the other peer picks it up
         trigger(BROADCAST_AFTER_SYNC_MS);
+
+        // Remove tabs that were deleted while offline (tombstone cleanup)
+        if (offlineTombstones.size > 0) {
+            await applyTombstones();
+        }
     } else {
         // Incremental diff-based sync
         console.log(`[SYNC] Incremental sync from ${remoteState.peerId}: ${remoteState.tabs.length} tabs`);
@@ -951,6 +984,213 @@ async function processSyncData(remoteState) {
     lastRemoteSyncTime = remoteState.timestamp;
 }
 
+// Persist sync state to storage after each successful broadcast.
+async function persistSyncState(broadcastTabs) {
+    const syncIdMappings = broadcastTabs.map(t => ({
+        sId: t.sId,
+        url: t.url,
+        pinned: t.pinned
+    }));
+
+    const lastBroadcastTabs = broadcastTabs.map(t => ({
+        sId: t.sId,
+        url: t.url,
+        pinned: t.pinned
+    }));
+
+    // Serialize group mappings
+    const groupSyncIdMappings = [];
+    for (const [groupId, gSyncId] of GROUP_ID_TO_SYNC_ID) {
+        const props = lastSeenGroupProps.get(gSyncId);
+        if (props) {
+            groupSyncIdMappings.push({
+                gSyncId,
+                title: props.title,
+                color: props.color
+            });
+        }
+    }
+
+    // Serialize per-peer remote state
+    const peerRemoteStates = {};
+    for (const [peerId, tabMap] of lastKnownRemoteState) {
+        peerRemoteStates[peerId] = Array.from(tabMap.values());
+    }
+
+    await browser.storage.local.set({
+        syncIdMappings,
+        groupSyncIdMappings,
+        lastBroadcastTabs,
+        peerRemoteStates
+    });
+}
+
+// Restore sync ID mappings from storage at boot.
+// Returns tombstone keys (Set of "url|pinned") for tabs deleted while offline.
+async function restoreSyncMappings() {
+    let result;
+    try {
+        result = await browser.storage.local.get([
+            'syncIdMappings', 'groupSyncIdMappings', 'lastBroadcastTabs'
+        ]);
+    } catch (e) {
+        console.warn('[RESTORE] Failed to load sync mappings:', e.message);
+        return;
+    }
+
+    const persistedMappings = result.syncIdMappings;
+    if (!Array.isArray(persistedMappings) || persistedMappings.length === 0) {
+        return;
+    }
+
+    // Query current live tabs in sync window
+    const allTabs = await browser.tabs.query({ windowId: syncWindowId });
+    const liveTabs = allTabs
+        .map(t => ({ id: t.id, url: normalizeUrl(t.url), pinned: t.pinned }))
+        .filter(t => isSyncableUrl(t.url));
+
+    // Match live tabs to persisted mappings
+    const { matched, unmatched } = matchTabsToMappings(liveTabs, persistedMappings);
+
+    // Restore tab sync ID mappings
+    for (const { tabId, sId } of matched) {
+        TAB_ID_TO_SYNC_ID.set(tabId, sId);
+        SYNC_ID_TO_TAB_ID.set(sId, tabId);
+    }
+
+    console.log(`[RESTORE] Restored ${matched.length} tab mappings (${unmatched.length} unmatched)`);
+    fileLog(`Restored ${matched.length} tab mappings, ${unmatched.length} unmatched`, 'RESTORE');
+
+    // Restore group mappings
+    const persistedGroups = result.groupSyncIdMappings;
+    if (Array.isArray(persistedGroups) && persistedGroups.length > 0 && browser.tabGroups) {
+        try {
+            const liveGroups = await browser.tabGroups.query({ windowId: syncWindowId });
+            const usedGroupIds = new Set();
+
+            for (const pg of persistedGroups) {
+                const match = liveGroups.find(g =>
+                    !usedGroupIds.has(g.id) &&
+                    (g.title || '') === pg.title &&
+                    (g.color || 'grey') === pg.color
+                );
+                if (match) {
+                    GROUP_ID_TO_SYNC_ID.set(match.id, pg.gSyncId);
+                    SYNC_ID_TO_GROUP_ID.set(pg.gSyncId, match.id);
+                    lastSeenGroupProps.set(pg.gSyncId, { title: pg.title, color: pg.color });
+                    usedGroupIds.add(match.id);
+                }
+            }
+
+            console.log(`[RESTORE] Restored ${usedGroupIds.size} group mappings`);
+        } catch (e) {
+            // tabGroups API might not work
+        }
+    }
+
+    // Compute tombstones: persisted broadcast tabs whose url|pinned has no live match
+    const lastBroadcast = result.lastBroadcastTabs;
+    if (Array.isArray(lastBroadcast) && lastBroadcast.length > 0) {
+        const liveKeys = new Map(); // "url|pinned" -> count
+        for (const t of liveTabs) {
+            const key = `${t.url}|${t.pinned}`;
+            liveKeys.set(key, (liveKeys.get(key) || 0) + 1);
+        }
+
+        // Consume live tabs against broadcast tabs; leftovers are tombstones
+        const broadcastKeys = new Map(); // "url|pinned" -> count
+        for (const t of lastBroadcast) {
+            const key = `${t.url}|${t.pinned}`;
+            broadcastKeys.set(key, (broadcastKeys.get(key) || 0) + 1);
+        }
+
+        for (const [key, broadcastCount] of broadcastKeys) {
+            const liveCount = liveKeys.get(key) || 0;
+            if (liveCount < broadcastCount) {
+                offlineTombstones.add(key);
+            }
+        }
+
+        if (offlineTombstones.size > 0) {
+            console.log(`[RESTORE] Computed ${offlineTombstones.size} offline tombstones`);
+            fileLog(`Computed ${offlineTombstones.size} offline tombstones`, 'RESTORE');
+        }
+    }
+}
+
+// Restore per-peer remote state from storage at boot.
+async function restoreRemoteStates() {
+    let result;
+    try {
+        result = await browser.storage.local.get('peerRemoteStates');
+    } catch (e) {
+        console.warn('[RESTORE] Failed to load remote states:', e.message);
+        return;
+    }
+
+    const stored = result.peerRemoteStates;
+    if (!stored || typeof stored !== 'object') {
+        return;
+    }
+
+    let restored = 0;
+    for (const [peerId, tabs] of Object.entries(stored)) {
+        if (Array.isArray(tabs)) {
+            const tabMap = new Map(tabs.map(t => [t.sId, t]));
+            lastKnownRemoteState.set(peerId, tabMap);
+            restored++;
+        }
+    }
+
+    if (restored > 0) {
+        console.log(`[RESTORE] Restored remote state for ${restored} peer(s)`);
+        fileLog(`Restored remote state for ${restored} peer(s)`, 'RESTORE');
+    }
+}
+
+// Apply tombstones after atomic merge: close tabs that were deleted while offline.
+async function applyTombstones() {
+    if (offlineTombstones.size === 0) {
+        return;
+    }
+
+    const allTabs = await browser.tabs.query({ windowId: syncWindowId });
+    const syncableTabs = allTabs.filter(t => !isPrivilegedUrl(t.url));
+    let remainingCount = allTabs.length;
+    let removed = 0;
+
+    for (const tab of syncableTabs) {
+        const key = `${normalizeUrl(tab.url)}|${tab.pinned}`;
+        if (offlineTombstones.has(key)) {
+            if (remainingCount <= 1) {
+                fileLog(`Skipping tombstone removal - last tab protection`, 'TOMBSTONE');
+                continue;
+            }
+            try {
+                await browser.tabs.remove(tab.id);
+                remainingCount--;
+                removed++;
+                // Clean up sync ID mappings
+                const sId = TAB_ID_TO_SYNC_ID.get(tab.id);
+                if (sId) {
+                    TAB_ID_TO_SYNC_ID.delete(tab.id);
+                    SYNC_ID_TO_TAB_ID.delete(sId);
+                }
+                fileLog(`Tombstone removed tab: ${tab.url} (pinned=${tab.pinned})`, 'TOMBSTONE');
+            } catch (e) {
+                // tab might already be gone
+            }
+        }
+    }
+
+    if (removed > 0) {
+        console.log(`[TOMBSTONE] Removed ${removed} tombstoned tab(s)`);
+        fileLog(`Removed ${removed} tombstoned tab(s)`, 'TOMBSTONE');
+    }
+
+    offlineTombstones.clear();
+}
+
 if (typeof module !== 'undefined') {
-    module.exports = { computeAtomicMerge, computeRemoteDiff, findMatchingLocalTab, buildTabGroupingMap, shouldSuppressBounce };
+    module.exports = { computeAtomicMerge, computeRemoteDiff, findMatchingLocalTab, buildTabGroupingMap, shouldSuppressBounce, matchTabsToMappings };
 }

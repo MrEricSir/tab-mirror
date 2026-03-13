@@ -15,7 +15,7 @@ const bg = require('../../src/background.js');
 globalThis.isPrivilegedUrl = bg.isPrivilegedUrl;
 globalThis.normalizeUrl = bg.normalizeUrl;
 
-const { computeAtomicMerge, computeRemoteDiff, findMatchingLocalTab, buildTabGroupingMap, shouldSuppressBounce } = require('../../src/sync-engine.js');
+const { computeAtomicMerge, computeRemoteDiff, findMatchingLocalTab, buildTabGroupingMap, shouldSuppressBounce, matchTabsToMappings } = require('../../src/sync-engine.js');
 
 // --- computeAtomicMerge ---
 
@@ -393,5 +393,76 @@ describe('shouldSuppressBounce', () => {
         const history = { urls: ['https://a.com'], lastUpdated: 1000 };
         // now - lastUpdated = 30000, which is NOT < 30000, so expired
         assert.equal(shouldSuppressBounce(history, 31000, 'https://a.com', 30000), false);
+    });
+});
+
+// --- matchTabsToMappings ---
+
+describe('matchTabsToMappings', () => {
+    const liveTab = (id, url, pinned = false) => ({ id, url, pinned });
+    const mapping = (sId, url, pinned = false) => ({ sId, url, pinned });
+
+    test('matches tabs by url+pinned', () => {
+        const live = [liveTab(1, 'https://a.com'), liveTab(2, 'https://b.com')];
+        const persisted = [mapping('s1', 'https://a.com'), mapping('s2', 'https://b.com')];
+        const result = matchTabsToMappings(live, persisted);
+        assert.equal(result.matched.length, 2);
+        assert.equal(result.unmatched.length, 0);
+        assert.deepEqual(result.matched[0], { tabId: 1, sId: 's1' });
+        assert.deepEqual(result.matched[1], { tabId: 2, sId: 's2' });
+    });
+
+    test('returns unmatched persisted entries as tombstone candidates', () => {
+        const live = [liveTab(1, 'https://a.com')];
+        const persisted = [mapping('s1', 'https://a.com'), mapping('s2', 'https://gone.com')];
+        const result = matchTabsToMappings(live, persisted);
+        assert.equal(result.matched.length, 1);
+        assert.equal(result.unmatched.length, 1);
+        assert.equal(result.unmatched[0].sId, 's2');
+        assert.equal(result.unmatched[0].url, 'https://gone.com');
+    });
+
+    test('handles multiple tabs with same URL (greedy matching)', () => {
+        const live = [liveTab(1, 'https://a.com'), liveTab(2, 'https://a.com')];
+        const persisted = [mapping('s1', 'https://a.com'), mapping('s2', 'https://a.com')];
+        const result = matchTabsToMappings(live, persisted);
+        assert.equal(result.matched.length, 2);
+        assert.equal(result.unmatched.length, 0);
+        // First mapping gets first live tab, second gets second
+        assert.equal(result.matched[0].tabId, 1);
+        assert.equal(result.matched[1].tabId, 2);
+    });
+
+    test('returns empty when no persisted mappings', () => {
+        const live = [liveTab(1, 'https://a.com')];
+        const result = matchTabsToMappings(live, []);
+        assert.equal(result.matched.length, 0);
+        assert.equal(result.unmatched.length, 0);
+    });
+
+    test('returns all unmatched when no live tabs', () => {
+        const persisted = [mapping('s1', 'https://a.com'), mapping('s2', 'https://b.com')];
+        const result = matchTabsToMappings([], persisted);
+        assert.equal(result.matched.length, 0);
+        assert.equal(result.unmatched.length, 2);
+    });
+
+    test('different pinned state prevents match', () => {
+        const live = [liveTab(1, 'https://a.com', true)];
+        const persisted = [mapping('s1', 'https://a.com', false)];
+        const result = matchTabsToMappings(live, persisted);
+        assert.equal(result.matched.length, 0);
+        assert.equal(result.unmatched.length, 1);
+    });
+
+    test('each live tab matched at most once (no double-assignment)', () => {
+        const live = [liveTab(1, 'https://a.com')];
+        const persisted = [mapping('s1', 'https://a.com'), mapping('s2', 'https://a.com')];
+        const result = matchTabsToMappings(live, persisted);
+        assert.equal(result.matched.length, 1);
+        assert.equal(result.unmatched.length, 1);
+        assert.equal(result.matched[0].tabId, 1);
+        assert.equal(result.matched[0].sId, 's1');
+        assert.equal(result.unmatched[0].sId, 's2');
     });
 });
