@@ -157,9 +157,12 @@ Tab Mirror requests these Firefox permissions:
 The test suite validates security-relevant behavior:
 - HMAC computation and verification (correct key, wrong nonce, wrong key)
 - AES-256-GCM encryption round-trip, tamper detection, and wrong-key rejection
-- Connection authentication flow (challenge/response)
-- Privileged URL filtering
+- Encryption key derivation (HKDF-SHA256) determinism and key isolation
+- Connection authentication flow (challenge/response, paired accept, unpaired reject)
+- Input validation (malformed peer IDs, invalid URLs, oversized payloads, duplicate sync IDs)
+- Privileged URL filtering and URL scheme allowlisting
 - Private window exclusion
+- Pairing code generation, validation, and confusable character exclusion
 
 Run tests:
 ```bash
@@ -167,12 +170,12 @@ npm test
 ```
 
 ### Manual Security Review Checklist
-- [ ] Review `src/background.js` for sensitive data handling
-- [ ] Verify privileged URL filtering in `isPrivilegedUrl()`
-- [ ] Check HMAC and encryption key derivation
-- [ ] Audit pairing code generation and exchange
-- [ ] Verify no `eval`, `innerHTML`, or dynamic script injection
-- [ ] Review PeerJS and WebRTC configuration
+- [ ] Review background scripts for sensitive data handling (`src/background.js`, `src/sync-engine.js`, `src/message-internal.js`, `src/message-external.js`, `src/init.js`)
+- [ ] Verify privileged URL filtering in `isPrivilegedUrl()` and input validation in `validateRemoteState()`/`validateTabData()`
+- [ ] Check HMAC and encryption key derivation in `src/crypto.js`
+- [ ] Audit pairing code generation and exchange in `src/pairing.js`
+- [ ] Verify no `eval` or dynamic script injection; confirm `innerHTML` usage in `src/popup.js` is sanitized via `escapeHtml()`
+- [ ] Review PeerJS and WebRTC configuration in `src/transport.js`
 - [ ] Audit third-party dependencies (PeerJS is the only runtime dependency)
 - [ ] Test with malformed or malicious peer messages
 
