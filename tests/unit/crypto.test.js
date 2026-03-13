@@ -13,7 +13,13 @@ const {
     generateSharedKey,
     computeHMAC,
     verifyHMAC,
+    deriveEncryptionKey,
+    encryptState,
+    decryptState,
 } = require('../../src/crypto.js');
+
+// Stub fileLog (used by decryptState's catch block)
+globalThis.fileLog = () => {};
 
 // --- formatPairingCode ---
 
@@ -164,5 +170,152 @@ describe('verifyHMAC', () => {
         const hmac = await computeHMAC(key1, 'payload');
         const result = await verifyHMAC(key2, 'payload', hmac);
         assert.equal(result, false);
+    });
+});
+
+// --- deriveEncryptionKey ---
+
+describe('deriveEncryptionKey', () => {
+    test('returns a CryptoKey with AES-GCM algorithm', async () => {
+        const sharedKey = await generateSharedKey();
+        const cryptoKey = await deriveEncryptionKey(sharedKey);
+        assert.equal(cryptoKey.algorithm.name, 'AES-GCM');
+        assert.equal(cryptoKey.algorithm.length, 256);
+    });
+
+    test('returns a key with encrypt and decrypt usages', async () => {
+        const sharedKey = await generateSharedKey();
+        const cryptoKey = await deriveEncryptionKey(sharedKey);
+        const usages = Array.from(cryptoKey.usages).sort();
+        assert.deepEqual(usages, ['decrypt', 'encrypt']);
+    });
+
+    test('same input produces same key (deterministic derivation)', async () => {
+        const sharedKey = await generateSharedKey();
+        const key1 = await deriveEncryptionKey(sharedKey);
+        const key2 = await deriveEncryptionKey(sharedKey);
+        // Encrypt with key1, decrypt with key2 to prove equivalence
+        const plaintext = { test: 'determinism' };
+        const encrypted = await encryptState(key1, plaintext);
+        const decrypted = await decryptState(key2, encrypted);
+        assert.deepEqual(decrypted, plaintext);
+    });
+});
+
+// --- encryptState ---
+
+describe('encryptState', () => {
+    test('returns envelope with expected fields', async () => {
+        const sharedKey = await generateSharedKey();
+        const cryptoKey = await deriveEncryptionKey(sharedKey);
+        const state = { peerId: 'peer-1', tabs: [] };
+        const envelope = await encryptState(cryptoKey, state);
+        assert.equal(envelope.type, 'MIRROR_SYNC_ENCRYPTED');
+        assert.equal(envelope.peerId, 'peer-1');
+        assert.equal(typeof envelope.iv, 'string');
+        assert.equal(typeof envelope.ciphertext, 'string');
+    });
+
+    test('preserves peerId from input state', async () => {
+        const sharedKey = await generateSharedKey();
+        const cryptoKey = await deriveEncryptionKey(sharedKey);
+        const state = { peerId: 'my-unique-peer', data: 'hello' };
+        const envelope = await encryptState(cryptoKey, state);
+        assert.equal(envelope.peerId, 'my-unique-peer');
+    });
+
+    test('produces different iv each call', async () => {
+        const sharedKey = await generateSharedKey();
+        const cryptoKey = await deriveEncryptionKey(sharedKey);
+        const state = { peerId: 'peer-1', tabs: [] };
+        const envelope1 = await encryptState(cryptoKey, state);
+        const envelope2 = await encryptState(cryptoKey, state);
+        assert.notEqual(envelope1.iv, envelope2.iv);
+    });
+});
+
+// --- decryptState ---
+
+describe('decryptState', () => {
+    test('roundtrip: encrypt then decrypt recovers original object', async () => {
+        const sharedKey = await generateSharedKey();
+        const cryptoKey = await deriveEncryptionKey(sharedKey);
+        const original = { peerId: 'peer-1', tabs: [{ id: 1, url: 'https://example.com' }] };
+        const encrypted = await encryptState(cryptoKey, original);
+        const decrypted = await decryptState(cryptoKey, encrypted);
+        assert.deepEqual(decrypted, original);
+    });
+
+    test('returns null for tampered ciphertext', async () => {
+        const sharedKey = await generateSharedKey();
+        const cryptoKey = await deriveEncryptionKey(sharedKey);
+        const encrypted = await encryptState(cryptoKey, { peerId: 'p', data: 'secret' });
+        // Tamper with the ciphertext
+        const bytes = Uint8Array.from(atob(encrypted.ciphertext), c => c.charCodeAt(0));
+        bytes[0] ^= 0xFF;
+        encrypted.ciphertext = btoa(String.fromCharCode(...bytes));
+        const result = await decryptState(cryptoKey, encrypted);
+        assert.equal(result, null);
+    });
+
+    test('returns null for wrong key', async () => {
+        const sharedKey1 = await generateSharedKey();
+        const sharedKey2 = await generateSharedKey();
+        const key1 = await deriveEncryptionKey(sharedKey1);
+        const key2 = await deriveEncryptionKey(sharedKey2);
+        const encrypted = await encryptState(key1, { peerId: 'p', data: 'secret' });
+        const result = await decryptState(key2, encrypted);
+        assert.equal(result, null);
+    });
+});
+
+// --- encrypt/decrypt integration ---
+
+describe('encrypt/decrypt integration', () => {
+    test('roundtrip with complex nested state object', async () => {
+        const sharedKey = await generateSharedKey();
+        const cryptoKey = await deriveEncryptionKey(sharedKey);
+        const complexState = {
+            peerId: 'peer-abc',
+            tabs: [
+                { id: 1, url: 'https://example.com', title: 'Example', pinned: true },
+                { id: 2, url: 'https://test.org', title: 'Test', pinned: false },
+            ],
+            groups: [
+                { id: 100, title: 'Research', color: 'blue', tabs: [1, 2] },
+            ],
+            metadata: {
+                windowId: 42,
+                timestamp: Date.now(),
+            },
+        };
+        const encrypted = await encryptState(cryptoKey, complexState);
+        const decrypted = await decryptState(cryptoKey, encrypted);
+        assert.deepEqual(decrypted, complexState);
+    });
+
+    test('different keys cannot decrypt each other\'s messages', async () => {
+        const keyA = await deriveEncryptionKey(await generateSharedKey());
+        const keyB = await deriveEncryptionKey(await generateSharedKey());
+        const encrypted = await encryptState(keyA, { peerId: 'p', secret: 'data' });
+        const result = await decryptState(keyB, encrypted);
+        assert.equal(result, null);
+    });
+
+    test('roundtrip preserves all JSON types', async () => {
+        const sharedKey = await generateSharedKey();
+        const cryptoKey = await deriveEncryptionKey(sharedKey);
+        const state = {
+            peerId: 'peer-types',
+            aString: 'hello',
+            aNumber: 42.5,
+            aBoolean: true,
+            aFalse: false,
+            anArray: [1, 'two', null, true],
+            aNull: null,
+        };
+        const encrypted = await encryptState(cryptoKey, state);
+        const decrypted = await decryptState(cryptoKey, encrypted);
+        assert.deepEqual(decrypted, state);
     });
 });

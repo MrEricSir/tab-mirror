@@ -111,5 +111,8 @@ if (typeof module !== 'undefined') {
         generateSharedKey,
         computeHMAC,
         verifyHMAC,
+        deriveEncryptionKey,
+        encryptState,
+        decryptState,
     };
 }
