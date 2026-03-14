@@ -307,6 +307,17 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 return { success: true, data: { paused: syncPaused } };
             }
 
+            case 'setSyncContainerTabs': {
+                syncContainerTabs = !!message.enabled;
+                browser.storage.local.set({ syncContainerTabs });
+                broadcastState();
+                return { success: true, data: { syncContainerTabs } };
+            }
+
+            case 'getSyncContainerTabs': {
+                return { success: true, data: { syncContainerTabs } };
+            }
+
             case 'muteOutgoing': {
                 outgoingMuted = message.muted;
                 return { success: true, data: `Outgoing muted: ${outgoingMuted}` };

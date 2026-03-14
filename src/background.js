@@ -85,6 +85,7 @@ let pendingSyncQueue = [];        // Remote states queued up while we're busy pr
 let syncHistory = [];             // Last N sync events for debugging
 const MAX_SYNC_HISTORY = 50;
 let syncPaused = false;           // User toggle: pauses all sync, saved to storage
+let syncContainerTabs = true;     // User toggle: sync container tabs, saved to storage
 let syncWindowChanged = false;    // Flagged as true in adoptSyncWindow, we clear it after broadcast
 let startTime = Date.now();
 let syncWindowId = null;
@@ -309,6 +310,12 @@ function validateTabData(tabData) {
     }
     if (tabData.index !== undefined && (tabData.index < 0 || tabData.index > MAX_TAB_INDEX)) {
         return false;
+    }
+    // Sanitize containerName: must be a short string or strip it
+    if (tabData.containerName !== undefined) {
+        if (typeof tabData.containerName !== 'string' || tabData.containerName.length > 200) {
+            delete tabData.containerName;
+        }
     }
     return true;
 }

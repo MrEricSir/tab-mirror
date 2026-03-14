@@ -410,6 +410,16 @@ window.addEventListener('unload', () => {
         // storage might not be available
     }
 
+    // Load container sync preference
+    try {
+        const result = await browser.storage.local.get('syncContainerTabs');
+        if (result.syncContainerTabs === false) {
+            syncContainerTabs = false;
+        }
+    } catch (e) {
+        // storage might not be available
+    }
+
     // Select the sync window (single non-private window for all sync operations)
     try {
         const allWindows = await browser.windows.getAll({ windowTypes: ['normal'] });

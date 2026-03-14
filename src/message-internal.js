@@ -16,6 +16,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
             online: !!(window.peer && !window.peer.disconnected),
             lastSyncTime: lastRemoteSyncTime,
             syncPaused,
+            syncContainerTabs,
             syncWindowId,
             tabCount: tabSyncIds.size,
             isProcessingRemote
@@ -122,6 +123,13 @@ browser.runtime.onMessage.addListener((message, sender) => {
 
     if (message.action === 'getSyncPaused') {
         return Promise.resolve({ paused: syncPaused });
+    }
+
+    if (message.action === 'setSyncContainerTabs') {
+        syncContainerTabs = !!message.enabled;
+        browser.storage.local.set({ syncContainerTabs });
+        broadcastState();
+        return Promise.resolve({ success: true, syncContainerTabs });
     }
 
     if (message.action === 'adoptSyncWindowFromPopup') {

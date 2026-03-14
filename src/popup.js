@@ -113,6 +113,16 @@ async function updateUI() {
             syncToggle.checked = !response.syncPaused;
         }
 
+        // Container sync toggle: only show when contextualIdentities API exists
+        const containerSection = document.getElementById('containerSyncSection');
+        if (browser.contextualIdentities) {
+            containerSection.style.display = 'flex';
+            const containerToggle = document.getElementById('containerSyncToggle');
+            if (containerToggle && document.activeElement !== containerToggle) {
+                containerToggle.checked = response.syncContainerTabs !== false;
+            }
+        }
+
         // Update debug info
         updateDebugInfo();
 
@@ -500,6 +510,11 @@ document.getElementById('refreshBtn').addEventListener('click', async () => {
 
 document.getElementById('syncToggle').addEventListener('change', async (e) => {
     await browser.runtime.sendMessage({ action: "setSyncPaused", paused: !e.target.checked });
+    updateUI();
+});
+
+document.getElementById('containerSyncToggle').addEventListener('change', async (e) => {
+    await browser.runtime.sendMessage({ action: "setSyncContainerTabs", enabled: e.target.checked });
     updateUI();
 });
 

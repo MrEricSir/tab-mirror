@@ -3,6 +3,40 @@
 // issue on Linux headless Firefox).
 const lastSeenGroupProps = new Map(); // gSyncId -> { title, color }
 
+// Returns maps for resolving container identities by cookieStoreId and by name.
+async function getContainerMap() {
+    if (!browser.contextualIdentities) {
+        return { byId: new Map(), byName: new Map() };
+    }
+    try {
+        const identities = await browser.contextualIdentities.query({});
+        const byId = new Map();   // cookieStoreId -> name
+        const byName = new Map(); // name -> cookieStoreId
+        for (const ci of identities) {
+            byId.set(ci.cookieStoreId, ci.name);
+            if (!byName.has(ci.name)) {
+                byName.set(ci.name, ci.cookieStoreId);
+            }
+        }
+        return { byId, byName };
+    } catch (e) {
+        return { byId: new Map(), byName: new Map() };
+    }
+}
+
+// Check if a local tab's container matches the expected remote container.
+// Returns true if containers are compatible for adoption.
+function isContainerMatch(localTab, remoteTab, containerMap) {
+    const localStore = localTab.cookieStoreId || 'firefox-default';
+    if (!remoteTab.containerName) {
+        // Remote tab is in default container; local must be too
+        return localStore === 'firefox-default';
+    }
+    // Remote tab has a container; local must be in the same one
+    const expectedStore = containerMap.byName.get(remoteTab.containerName);
+    return expectedStore !== undefined && localStore === expectedStore;
+}
+
 // Pure: find an existing untracked local tab matching a remote tab based
 // on its properties.
 function findMatchingLocalTab(localTabs, remoteTab, trackedTabIds, indexTolerance) {
@@ -75,9 +109,18 @@ function shouldSuppressBounce(history, now, newUrl, bounceWindowMs) {
 async function captureLocalState() {
     const tabs = await browser.tabs.query({ windowId: syncWindowId });
 
-    const syncableTabs = tabs
+    let syncableTabs = tabs
         .map(t => ({ ...t, url: normalizeUrl(t.url) }))
         .filter(t => isSyncableUrl(t.url));
+
+    // Container tab handling
+    const containerMap = syncContainerTabs ? await getContainerMap() : null;
+    if (!syncContainerTabs) {
+        // Filter out container tabs entirely when the toggle is off
+        syncableTabs = syncableTabs.filter(t =>
+            !t.cookieStoreId || t.cookieStoreId === 'firefox-default'
+        );
+    }
 
     // Grab group data if the API is available
     let groupData = {};
@@ -131,6 +174,13 @@ async function captureLocalState() {
             const gSyncId = groupSyncIds.getByA(t.groupId);
             if (gSyncId) {
                 tabInfo.groupSyncId = gSyncId;
+            }
+        }
+        // Add container name for non-default containers
+        if (containerMap && t.cookieStoreId && t.cookieStoreId !== 'firefox-default') {
+            const name = containerMap.byId.get(t.cookieStoreId);
+            if (name) {
+                tabInfo.containerName = name;
             }
         }
         return tabInfo;
@@ -362,11 +412,13 @@ async function reorderTabs(remoteTabs) {
 // Adopts existing tabs that match by URL, or creates new ones. Returns set of adopted tab IDs.
 async function adoptOrCreateTabs(targetTabs, syncableTabs) {
     const adoptedTabIds = new Set();
+    const containerMap = await getContainerMap();
     for (const tab of targetTabs) {
         const match = syncableTabs.find(lt =>
             !adoptedTabIds.has(lt.id) &&
             normalizeUrl(lt.url) === tab.url &&
-            lt.pinned === (tab.pinned || false)
+            lt.pinned === (tab.pinned || false) &&
+            isContainerMatch(lt, tab, containerMap)
         );
 
         if (match) {
@@ -382,12 +434,20 @@ async function adoptOrCreateTabs(targetTabs, syncableTabs) {
             fileLog(`Adopted existing tab: ${tab.url} (${tab.sId})`, 'REPLACE');
         } else {
             try {
-                const newTab = await browser.tabs.create({
+                const createOpts = {
                     url: tab.url,
                     windowId: syncWindowId,
                     pinned: tab.pinned || false,
                     active: false
-                });
+                };
+                // Resolve container by name
+                if (tab.containerName) {
+                    const storeId = containerMap.byName.get(tab.containerName);
+                    if (storeId) {
+                        createOpts.cookieStoreId = storeId;
+                    }
+                }
+                const newTab = await browser.tabs.create(createOpts);
                 if (tab.muted) {
                     try {
                         await browser.tabs.update(newTab.id, { muted: true });
@@ -540,6 +600,7 @@ function computeRemoteDiff(remoteTabs, prevRemoteState) {
 async function syncAddedAndUpdatedTabs(remoteTabs, prevState, diff) {
     const localTabs = await browser.tabs.query({ windowId: syncWindowId });
     const trackedTabIds = new Set(tabSyncIds.keys());
+    const containerMap = await getContainerMap();
     let added = 0;
     let updated = 0;
 
@@ -549,11 +610,11 @@ async function syncAddedAndUpdatedTabs(remoteTabs, prevState, diff) {
             continue; // already tracked locally
         }
 
-        // Try to adopt an existing untracked tab with same URL
+        // Try to adopt an existing untracked tab with same URL and container
         let adopted = false;
         {
             const match = findMatchingLocalTab(localTabs, rTab, trackedTabIds, INDEX_MATCH_TOLERANCE);
-            if (match) {
+            if (match && isContainerMatch(match, rTab, containerMap)) {
                 tabSyncIds.set(match.id, rTab.sId);
                 trackedTabIds.add(match.id);
                 fileLog(`Adopted existing tab: ${rTab.url} (${rTab.sId})`, 'SYNC');
@@ -563,12 +624,20 @@ async function syncAddedAndUpdatedTabs(remoteTabs, prevState, diff) {
 
         if (!adopted) {
             try {
-                const newTab = await browser.tabs.create({
+                const createOpts = {
                     url: rTab.url,
                     windowId: syncWindowId,
                     pinned: rTab.pinned || false,
                     active: false
-                });
+                };
+                // Resolve container by name
+                if (rTab.containerName) {
+                    const storeId = containerMap.byName.get(rTab.containerName);
+                    if (storeId) {
+                        createOpts.cookieStoreId = storeId;
+                    }
+                }
+                const newTab = await browser.tabs.create(createOpts);
                 if (rTab.muted) {
                     try {
                         await browser.tabs.update(newTab.id, { muted: true });

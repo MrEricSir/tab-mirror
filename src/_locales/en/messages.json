@@ -12,6 +12,12 @@
   "ariaEnableSync": {
     "message": "Enable sync"
   },
+  "labelSyncContainers": {
+    "message": "Sync Containers:"
+  },
+  "ariaSyncContainers": {
+    "message": "Sync container tabs"
+  },
 
   "buttonPairNewDevice": {
     "message": "Pair New Device"

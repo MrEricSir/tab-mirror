@@ -12,6 +12,8 @@
     "tabGroups",
     "notifications",
     "theme",
+    "cookies",
+    "contextualIdentities",
     "https://*.peerjs.com/*"
   ],
   "content_security_policy": "script-src 'self'; object-src 'self'; connect-src 'self' wss://*.peerjs.com https://*.peerjs.com;",
