@@ -98,6 +98,21 @@ class TabMirrorBridge extends TestBridge {
   }
 
   /**
+   * Get the captured local state (result of captureLocalState).
+   * Returns the state payload the extension would broadcast to peers.
+   */
+  async getCapturedState() {
+    return await this._sendToTabMirror({ action: 'getCapturedState' });
+  }
+
+  /**
+   * Run normalizeUrl() in the extension runtime and return the result (test-only).
+   */
+  async testNormalizeUrl(url) {
+    return await this._sendToTabMirror({ action: 'testNormalizeUrl', url });
+  }
+
+  /**
    * Inject arbitrary remote state for testing validation (test-only)
    */
   async injectRemoteState(remoteState) {

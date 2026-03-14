@@ -16,7 +16,7 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                         syncCounter,
                         isProcessingRemote,
                         pendingSyncQueueLength: pendingSyncQueue.length,
-                        lastRemoteSyncTime,
+                        lastRemoteSyncTime: Object.fromEntries(lastRemoteSyncTime),
                         tabMappings: {
                             tabIdToSyncId: tabSyncIds.toJSON(),
                             syncIdToTabId: tabSyncIds.toJSON().map(([a, b]) => [b, a]),
@@ -254,6 +254,19 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 };
             }
 
+            case 'getCapturedState': {
+                // Test-only: returns the result of captureLocalState() so tests
+                // can inspect what URLs the extension would broadcast to peers.
+                const captured = await captureLocalState();
+                return { success: true, data: captured };
+            }
+
+            case 'testNormalizeUrl': {
+                // Test-only: runs normalizeUrl() and returns the result so tests
+                // can verify URL normalization logic in the extension runtime.
+                return { success: true, data: normalizeUrl(message.url) };
+            }
+
             case 'injectRemoteState': {
                 // Test-only: inject arbitrary remote state to test validation
                 // Set a fresh timestamp so the timestamp guard doesn't block it
@@ -469,7 +482,7 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 lastKnownRemoteState.clear();
                 connectionRetries.clear();
                 lastMessageTime.clear();
-                lastRemoteSyncTime = 0;
+                lastRemoteSyncTime.clear();
                 tabSyncIds.clear();
                 clearGroupState();
                 recentlySyncedUrls.clear();

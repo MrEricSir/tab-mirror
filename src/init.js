@@ -339,7 +339,16 @@ function runHealthCheck() {
 setInterval(runHealthCheck, HEALTH_CHECK_INTERVAL_MS);
 
 // Cleanup on Unload/Suspend
-browser.runtime.onSuspend.addListener(() => {
+// Closes all peer connections gracefully before destroying the transport.
+function shutdownTransport() {
+    for (const [, conn] of connections) {
+        try {
+            conn.close();
+        } catch (e) {
+            // conn might already be closed
+        }
+    }
+    connections.clear();
     if (window.peer) {
         try {
             window.peer.destroy();
@@ -347,17 +356,10 @@ browser.runtime.onSuspend.addListener(() => {
             // peer might already be gone
         }
     }
-});
+}
 
-window.addEventListener('unload', () => {
-    if (window.peer) {
-        try {
-            window.peer.destroy();
-        } catch (e) {
-            // peer might already be gone
-        }
-    }
-});
+browser.runtime.onSuspend.addListener(shutdownTransport);
+window.addEventListener('unload', shutdownTransport);
 
 // Init
 // Loads device ID and synced peer set from storage, finds or creates the sync

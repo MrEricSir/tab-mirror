@@ -14,7 +14,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
             peers: knownPeers.length,
             pairedCount: pairedDevices.length,
             online: !!(window.peer && !window.peer.disconnected),
-            lastSyncTime: lastRemoteSyncTime,
+            lastSyncTime: Math.max(0, ...lastRemoteSyncTime.values()),
             syncPaused,
             syncContainerTabs,
             syncWindowId,
@@ -34,7 +34,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
             tabMappings: tabSyncIds.size,
             groupMappings: groupSyncIds.size,
             isProcessingRemote,
-            lastSyncTime: lastRemoteSyncTime > 0 ? new Date(lastRemoteSyncTime).toISOString() : 'never',
+            lastSyncTime: lastRemoteSyncTime.size > 0 ? new Date(Math.max(...lastRemoteSyncTime.values())).toISOString() : 'never',
             syncCounter,
             syncedPeers: Array.from(syncedPeers),
             pairedDevices: pairedDevices.map(d => ({ peerId: d.peerId, name: d.name, pairedAt: d.pairedAt })),
@@ -49,7 +49,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
     if (message.action === 'fullSystemRefresh') {
         syncedPeers.clear();
         knownPeers = [];
-        lastRemoteSyncTime = 0;
+        lastRemoteSyncTime.clear();
         syncCounter = 0;
         lastKnownRemoteState.clear();
         connectionRetries.clear();

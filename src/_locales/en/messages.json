@@ -7,13 +7,13 @@
     "message": "This Device:"
   },
   "labelEnabled": {
-    "message": "Enabled:"
+    "message": "Sync:"
   },
   "ariaEnableSync": {
     "message": "Enable sync"
   },
   "labelSyncContainers": {
-    "message": "Sync Containers:"
+    "message": "Containers:"
   },
   "ariaSyncContainers": {
     "message": "Sync container tabs"

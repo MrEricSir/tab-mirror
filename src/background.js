@@ -71,7 +71,7 @@ const PEER_CONFIG = TEST_MODE
 let myDeviceId = '';
 let syncCounter = 0;
 let isProcessingRemote = false;
-let lastRemoteSyncTime = 0;
+let lastRemoteSyncTime = new Map(); // peerId -> timestamp
 let syncedPeers = new Set();
 let knownPeers = [];        // Pulled from connections Map for test compatibility
 let broadcastDebounce = null;
@@ -103,6 +103,7 @@ function cleanupPeerConnection(peerId) {
     pendingDials.delete(peerId);
     authenticatedPeers.delete(peerId);
     lastMessageTime.delete(peerId);
+    lastRemoteSyncTime.delete(peerId);
     knownPeers = Array.from(connections.keys());
 }
 
@@ -275,6 +276,13 @@ function isSyncableUrl(url) {
 function normalizeUrl(url) {
     if (url === 'about:newtab' || url === 'about:home') {
         return 'about:blank';
+    }
+    if (url && url.startsWith('about:reader?url=')) {
+        try {
+            return decodeURIComponent(url.slice('about:reader?url='.length));
+        } catch (e) {
+            return url;
+        }
     }
     return url;
 }

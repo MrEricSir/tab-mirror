@@ -102,6 +102,27 @@ describe('normalizeUrl', () => {
         assert.equal(normalizeUrl('https://example.com'), 'https://example.com');
         assert.equal(normalizeUrl('http://foo.bar/baz'), 'http://foo.bar/baz');
     });
+
+    test('extracts inner URL from encoded about:reader URL', () => {
+        assert.equal(
+            normalizeUrl('about:reader?url=https%3A%2F%2Fexample.com%2Farticle'),
+            'https://example.com/article'
+        );
+    });
+
+    test('extracts inner URL from non-encoded about:reader URL', () => {
+        assert.equal(
+            normalizeUrl('about:reader?url=https://example.com/article'),
+            'https://example.com/article'
+        );
+    });
+
+    test('returns original URL for malformed about:reader encoding', () => {
+        assert.equal(
+            normalizeUrl('about:reader?url=%ZZ%invalid'),
+            'about:reader?url=%ZZ%invalid'
+        );
+    });
 });
 
 // --- isAllowedUrlScheme ---

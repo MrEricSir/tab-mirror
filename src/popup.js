@@ -121,6 +121,8 @@ async function updateUI() {
             if (containerToggle && document.activeElement !== containerToggle) {
                 containerToggle.checked = response.syncContainerTabs !== false;
             }
+            // Grey out when sync is paused
+            containerSection.classList.toggle('disabled', !!response.syncPaused);
         }
 
         // Update debug info

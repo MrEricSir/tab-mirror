@@ -122,6 +122,12 @@ async function captureLocalState() {
         );
     }
 
+    // Cap outgoing tabs to match receiver limit
+    if (syncableTabs.length > MAX_REMOTE_TABS) {
+        console.warn(`[BROADCAST] Capping outgoing tabs: ${syncableTabs.length} -> ${MAX_REMOTE_TABS}`);
+        syncableTabs = syncableTabs.slice(0, MAX_REMOTE_TABS);
+    }
+
     // Grab group data if the API is available
     let groupData = {};
     if (browser.tabGroups) {
@@ -937,7 +943,7 @@ async function handleSync(remoteState) {
         isProcessingRemote = false;
         if (broadcastPending) {
             broadcastPending = false;
-            trigger(BROADCAST_DEBOUNCE_MS);
+            trigger(BROADCAST_DEBOUNCE_FAST_MS);
         }
     }
 }
@@ -946,7 +952,8 @@ async function handleSync(remoteState) {
 // isProcessingRemote lock held. Validates, then routes to atomic merge
 // (first contact) or incremental sync (subsequent updates).
 async function processSyncData(remoteState) {
-    if (remoteState.timestamp <= lastRemoteSyncTime) {
+    const peerLastTime = lastRemoteSyncTime.get(remoteState.peerId) || 0;
+    if (remoteState.timestamp <= peerLastTime) {
         return;
     }
 
@@ -1050,7 +1057,7 @@ async function processSyncData(remoteState) {
         }
     }
 
-    lastRemoteSyncTime = remoteState.timestamp;
+    lastRemoteSyncTime.set(remoteState.peerId, remoteState.timestamp);
 }
 
 // Persist sync state to storage after each successful broadcast.
