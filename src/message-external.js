@@ -318,6 +318,81 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 return { success: true, data: { syncContainerTabs } };
             }
 
+            case 'createContainerTab': {
+                // Test-only: creates a tab in a named container
+                const containerMap = await getContainerMap();
+                const storeId = containerMap.byName.get(message.containerName);
+                const createOpts = {
+                    url: message.url || 'about:blank',
+                    windowId: syncWindowId,
+                    active: false
+                };
+                if (storeId) {
+                    createOpts.cookieStoreId = storeId;
+                }
+                const newTab = await browser.tabs.create(createOpts);
+                return {
+                    success: true,
+                    data: {
+                        tabId: newTab.id,
+                        containerName: storeId ? message.containerName : null,
+                        cookieStoreId: newTab.cookieStoreId
+                    }
+                };
+            }
+
+            case 'getContainers': {
+                // Test-only: returns all container identities
+                if (!browser.contextualIdentities) {
+                    return { success: true, data: [] };
+                }
+                const identities = await browser.contextualIdentities.query({});
+                return {
+                    success: true,
+                    data: identities.map(ci => ({
+                        name: ci.name,
+                        cookieStoreId: ci.cookieStoreId,
+                        color: ci.color,
+                        icon: ci.icon
+                    }))
+                };
+            }
+
+            case 'getTabContainerInfo': {
+                // Test-only: returns a tab's container info
+                const tab = await browser.tabs.get(message.tabId);
+                const containerMap = await getContainerMap();
+                const containerName = containerMap.byId.get(tab.cookieStoreId) || null;
+                return {
+                    success: true,
+                    data: {
+                        cookieStoreId: tab.cookieStoreId,
+                        containerName,
+                        isDefault: !tab.cookieStoreId || tab.cookieStoreId === 'firefox-default'
+                    }
+                };
+            }
+
+            case 'createContainer': {
+                // Test-only: creates a new container identity
+                if (!browser.contextualIdentities) {
+                    return { success: false, error: 'contextualIdentities API not available' };
+                }
+                const identity = await browser.contextualIdentities.create({
+                    name: message.name,
+                    color: message.color || 'blue',
+                    icon: message.icon || 'circle'
+                });
+                return {
+                    success: true,
+                    data: {
+                        name: identity.name,
+                        cookieStoreId: identity.cookieStoreId,
+                        color: identity.color
+                    }
+                };
+            }
+
             case 'muteOutgoing': {
                 outgoingMuted = message.muted;
                 return { success: true, data: `Outgoing muted: ${outgoingMuted}` };

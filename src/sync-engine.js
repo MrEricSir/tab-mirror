@@ -392,8 +392,19 @@ async function reorderTabs(remoteTabs) {
         try {
             const tab = await browser.tabs.get(tabId);
             if (tab.index !== targetIndex) {
+                const groupBefore = tab.groupId;
                 await browser.tabs.move(tabId, { index: targetIndex });
                 moved = true;
+                // Firefox may auto-group a tab when moving it into a group's range.
+                // Revert the side effect; correct grouping happens in syncGroupsIncremental().
+                if (browser.tabGroups) {
+                    const tabAfter = await browser.tabs.get(tabId);
+                    if (tabAfter.groupId !== groupBefore &&
+                        tabAfter.groupId !== undefined &&
+                        tabAfter.groupId !== -1) {
+                        await browser.tabs.ungroup([tabId]);
+                    }
+                }
             }
         } catch (e) {
             // tab might be gone

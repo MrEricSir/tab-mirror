@@ -231,6 +231,48 @@ class TabMirrorBridge extends TestBridge {
   }
 
   /**
+   * Set syncContainerTabs toggle
+   */
+  async setSyncContainerTabs(enabled) {
+    return await this._sendToTabMirror({ action: 'setSyncContainerTabs', enabled });
+  }
+
+  /**
+   * Get syncContainerTabs toggle state
+   */
+  async getSyncContainerTabs() {
+    return await this._sendToTabMirror({ action: 'getSyncContainerTabs' });
+  }
+
+  /**
+   * Create a tab in a named container
+   */
+  async createContainerTab(url, containerName) {
+    return await this._sendToTabMirror({ action: 'createContainerTab', url, containerName });
+  }
+
+  /**
+   * Get all container identities
+   */
+  async getContainers() {
+    return await this._sendToTabMirror({ action: 'getContainers' });
+  }
+
+  /**
+   * Get container info for a specific tab
+   */
+  async getTabContainerInfo(tabId) {
+    return await this._sendToTabMirror({ action: 'getTabContainerInfo', tabId });
+  }
+
+  /**
+   * Create a new container identity
+   */
+  async createContainer(name, color, icon) {
+    return await this._sendToTabMirror({ action: 'createContainer', name, color, icon });
+  }
+
+  /**
    * Get the moz-extension:// base URL for Tab Mirror.
    * Heads up: navigates away from the bridge page (auto-recovers on next call).
    */

@@ -588,6 +588,223 @@ async function testSwapGroupOrderPreservesIntraGroupOrder() {
   }
 }
 
+async function testMoveUngroupedTabToTopAboveGroup() {
+  console.log();
+  console.log('Test: Move Ungrouped Tab to Top (Above Group)');
+
+  let browserA, browserB;
+
+  try {
+    console.log('  Launching Browser A...');
+    browserA = await launchBrowser();
+    await sleep(1500);
+
+    const groupCheck = await browserA.testBridge.getGroupCount();
+    if (groupCheck.error) {
+      console.log('  tabGroups API not available, skipping');
+      results.pass('Move Ungrouped Tab to Top Above Group (skipped - no tabGroups API)');
+      return;
+    }
+
+    // Create a group with 2 tabs at the front
+    const urlG1 = generateTestUrl('top-g1');
+    const urlG2 = generateTestUrl('top-g2');
+    const urlUngrouped = generateTestUrl('top-ungrouped');
+
+    const tG1 = await browserA.testBridge.createTab(urlG1);
+    const tG2 = await browserA.testBridge.createTab(urlG2);
+    await sleep(300);
+
+    console.log('  Creating group "Front" with 2 tabs...');
+    try {
+      await browserA.testBridge.groupTabs([tG1.id, tG2.id], 'Front', 'blue');
+    } catch (error) {
+      if (error.message && error.message.includes('Tab Groups API not available')) {
+        console.log('  Skipping - Tab Groups API not available');
+        results.pass('Move Ungrouped Tab to Top Above Group (skipped)');
+        return;
+      }
+      throw error;
+    }
+    await sleep(300);
+
+    // Create an ungrouped tab after the group
+    const tUngrouped = await browserA.testBridge.createTab(urlUngrouped);
+    await sleep(300);
+
+    // Move ungrouped tab to index 0 (above the group)
+    console.log('  Moving ungrouped tab to index 0 (above group)...');
+    await browserA.testBridge.moveTab(tUngrouped.id, 0);
+    await sleep(500);
+
+    // Verify A: ungrouped tab at front, not in group
+    const tabsA = await browserA.testBridge.getTabs();
+    const ungroupedTabA = tabsA.find(t => t.url === urlUngrouped);
+    const groupResultA = await browserA.testBridge.getGroupCount();
+    const frontGroupA = groupResultA.groupDetails.find(g => g.title === 'Front');
+
+    console.log(`  A: ungrouped tab index=${ungroupedTabA.index}, groupId=${ungroupedTabA.groupId}`);
+    await Assert.isTrue(
+      ungroupedTabA.groupId === undefined || ungroupedTabA.groupId === -1,
+      'Ungrouped tab should NOT be in any group on A'
+    );
+
+    // Launch B and sync
+    console.log('  Launching Browser B...');
+    browserB = await launchBrowser();
+
+    const connectedA = await browserA.testBridge.waitForConnections(1, 30000);
+    const connectedB = await browserB.testBridge.waitForConnections(1, 30000);
+    await Assert.isTrue(connectedA && connectedB, 'Both should connect');
+
+    await browserA.testBridge.waitForSyncComplete(15000);
+    await browserB.testBridge.waitForSyncComplete(15000);
+    await sleep(1500);
+    await browserA.testBridge.waitForSyncComplete(10000);
+    await browserB.testBridge.waitForSyncComplete(10000);
+
+    // Verify B: ungrouped tab at front, not in group, group tabs follow
+    const tabsB = await browserB.testBridge.getTabs();
+    const ungroupedTabB = tabsB.find(t => t.url === urlUngrouped);
+    const g1TabB = tabsB.find(t => t.url === urlG1);
+    const g2TabB = tabsB.find(t => t.url === urlG2);
+
+    console.log(`  B: ungrouped index=${ungroupedTabB.index}, g1 index=${g1TabB.index}, g2 index=${g2TabB.index}`);
+    console.log(`  B: ungrouped groupId=${ungroupedTabB.groupId}`);
+
+    await Assert.isTrue(
+      ungroupedTabB.groupId === undefined || ungroupedTabB.groupId === -1,
+      'Ungrouped tab should NOT be in any group on B'
+    );
+    await Assert.isTrue(
+      ungroupedTabB.index < g1TabB.index,
+      'Ungrouped tab should be before group tabs on B'
+    );
+
+    // Verify the group still exists with its tabs
+    const groupB = await browserB.testBridge.waitForGroupState('Front', true, 10000);
+    await Assert.isTrue(!!groupB, 'B should have "Front" group');
+    await Assert.equal(groupB.tabCount, 2, 'Front group should have 2 tabs');
+
+    results.pass('Move Ungrouped Tab to Top Above Group');
+  } finally {
+    console.log('  Cleaning up...');
+    await cleanupBrowser(browserA);
+    await cleanupBrowser(browserB);
+  }
+}
+
+async function testMoveUngroupedTabToEndBelowGroup() {
+  console.log();
+  console.log('Test: Move Ungrouped Tab to End (Below Group)');
+
+  let browserA, browserB;
+
+  try {
+    console.log('  Launching Browser A...');
+    browserA = await launchBrowser();
+    await sleep(1500);
+
+    const groupCheck = await browserA.testBridge.getGroupCount();
+    if (groupCheck.error) {
+      console.log('  tabGroups API not available, skipping');
+      results.pass('Move Ungrouped Tab to End Below Group (skipped - no tabGroups API)');
+      return;
+    }
+
+    // Create an ungrouped tab first, then a group after it
+    const urlUngrouped = generateTestUrl('end-ungrouped');
+    const urlG1 = generateTestUrl('end-g1');
+    const urlG2 = generateTestUrl('end-g2');
+
+    const tUngrouped = await browserA.testBridge.createTab(urlUngrouped);
+    const tG1 = await browserA.testBridge.createTab(urlG1);
+    const tG2 = await browserA.testBridge.createTab(urlG2);
+    await sleep(300);
+
+    console.log('  Creating group "Back" with 2 tabs...');
+    try {
+      await browserA.testBridge.groupTabs([tG1.id, tG2.id], 'Back', 'red');
+    } catch (error) {
+      if (error.message && error.message.includes('Tab Groups API not available')) {
+        console.log('  Skipping - Tab Groups API not available');
+        results.pass('Move Ungrouped Tab to End Below Group (skipped)');
+        return;
+      }
+      throw error;
+    }
+    await sleep(300);
+
+    // Move ungrouped tab to the end (past the group).
+    // Firefox may auto-group the tab when it lands inside a group's range,
+    // so we explicitly ungroup it afterwards to get the state we want to test.
+    console.log('  Moving ungrouped tab to end (past group)...');
+    await browserA.testBridge.moveTab(tUngrouped.id, 99);
+    await sleep(300);
+    // Undo Firefox's auto-grouping if it happened
+    await browserA.testBridge.ungroupTabs([tUngrouped.id]);
+    await sleep(500);
+
+    // Verify A: ungrouped tab at end, not in group
+    const tabsA = await browserA.testBridge.getTabs();
+    const ungroupedTabA = tabsA.find(t => t.url === urlUngrouped);
+    const g2TabA = tabsA.find(t => t.url === urlG2);
+
+    console.log(`  A: ungrouped tab index=${ungroupedTabA.index}, groupId=${ungroupedTabA.groupId}`);
+    await Assert.isTrue(
+      ungroupedTabA.groupId === undefined || ungroupedTabA.groupId === -1,
+      'Ungrouped tab should NOT be in any group on A'
+    );
+    await Assert.isTrue(
+      ungroupedTabA.index > g2TabA.index,
+      'Ungrouped tab should be after group tabs on A'
+    );
+
+    // Launch B and sync
+    console.log('  Launching Browser B...');
+    browserB = await launchBrowser();
+
+    const connectedA = await browserA.testBridge.waitForConnections(1, 30000);
+    const connectedB = await browserB.testBridge.waitForConnections(1, 30000);
+    await Assert.isTrue(connectedA && connectedB, 'Both should connect');
+
+    await browserA.testBridge.waitForSyncComplete(15000);
+    await browserB.testBridge.waitForSyncComplete(15000);
+    await sleep(1500);
+    await browserA.testBridge.waitForSyncComplete(10000);
+    await browserB.testBridge.waitForSyncComplete(10000);
+
+    // Verify B: ungrouped tab at end, not in group
+    const tabsB = await browserB.testBridge.getTabs();
+    const ungroupedTabB = tabsB.find(t => t.url === urlUngrouped);
+    const g1TabB = tabsB.find(t => t.url === urlG1);
+    const g2TabB = tabsB.find(t => t.url === urlG2);
+
+    console.log(`  B: ungrouped index=${ungroupedTabB.index}, g1 index=${g1TabB.index}, g2 index=${g2TabB.index}`);
+    console.log(`  B: ungrouped groupId=${ungroupedTabB.groupId}`);
+
+    await Assert.isTrue(
+      ungroupedTabB.groupId === undefined || ungroupedTabB.groupId === -1,
+      'Ungrouped tab should NOT be in any group on B'
+    );
+    await Assert.isTrue(
+      ungroupedTabB.index > g2TabB.index,
+      'Ungrouped tab should be after group tabs on B'
+    );
+
+    // Verify the group still exists with its tabs
+    const groupB = await browserB.testBridge.waitForGroupState('Back', true, 10000);
+    await Assert.isTrue(!!groupB, 'B should have "Back" group');
+    await Assert.equal(groupB.tabCount, 2, 'Back group should have 2 tabs');
+
+    results.pass('Move Ungrouped Tab to End Below Group');
+  } finally {
+    console.log('  Cleaning up...');
+    await cleanupBrowser(browserA);
+    await cleanupBrowser(browserB);
+  }
+}
+
 async function main() {
   console.log('='.repeat(60));
   console.log('GROUP TAB ORDER TESTS');
@@ -599,6 +816,8 @@ async function main() {
     testAddTabToGroupPreservesOrder,
     testCrossGroupMovePreservesOrder,
     testSwapGroupOrderPreservesIntraGroupOrder,
+    testMoveUngroupedTabToTopAboveGroup,
+    testMoveUngroupedTabToEndBelowGroup,
   ];
 
   for (const test of tests) {
