@@ -115,6 +115,15 @@
     "message": "Copied!"
   },
 
+  "buttonRotateKey": {
+    "message": "Rotate Key"
+  },
+  "buttonRotating": {
+    "message": "Rotating..."
+  },
+  "buttonRotated": {
+    "message": "Rotated!"
+  },
   "buttonUnpair": {
     "message": "Unpair"
   },

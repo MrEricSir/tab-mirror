@@ -37,7 +37,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
             lastSyncTime: lastRemoteSyncTime.size > 0 ? new Date(Math.max(...lastRemoteSyncTime.values())).toISOString() : 'never',
             syncCounter,
             syncedPeers: Array.from(syncedPeers),
-            pairedDevices: pairedDevices.map(d => ({ peerId: d.peerId, name: d.name, pairedAt: d.pairedAt })),
+            pairedDevices: pairedDevices.map(d => ({ peerId: d.peerId, name: d.name, pairedAt: d.pairedAt, keyGeneration: d.keyGeneration || 1 })),
             authenticatedPeers: Array.from(authenticatedPeers),
             version: 'peerjs-v3',
             uptime: Math.round((Date.now() - startTime) / 1000) + 's',
@@ -55,6 +55,10 @@ browser.runtime.onMessage.addListener((message, sender) => {
         connectionRetries.clear();
         authenticatedPeers.clear();
         encryptionKeyCache.clear();
+        previousKeyCache.clear();
+        pendingKeyRotation.clear();
+        keyRotationTimers.forEach(t => clearTimeout(t));
+        keyRotationTimers.clear();
         pendingSyncQueue = [];
         syncHistory = [];
         notifiedPeers.clear();
@@ -205,6 +209,13 @@ browser.runtime.onMessage.addListener((message, sender) => {
         return (async () => {
             await removePairedDevice(message.peerId);
             return { success: true };
+        })();
+    }
+
+    if (message.action === 'rotateKey') {
+        return (async () => {
+            const result = await rotateKeyForPeer(message.peerId);
+            return result;
         })();
     }
 

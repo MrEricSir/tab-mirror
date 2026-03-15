@@ -219,6 +219,22 @@
 
     .unpair-btn:hover { background: var(--danger); color: white; }
 
+    .rotate-btn {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      padding: 6px 12px;
+      margin: 0 4px 0 0;
+      width: auto;
+      font-size: 11px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    .rotate-btn:hover { background: var(--accent); color: var(--accent-text); }
+    .rotate-btn:disabled { opacity: 0.4; cursor: default; }
+
     .unpair-confirm {
       display: flex;
       gap: 4px;

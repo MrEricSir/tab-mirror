@@ -196,9 +196,33 @@ async function updatePairedDevices() {
                     <span class="device-status ${device.connected ? 'connected' : 'offline'}">${device.connected ? '●' : '○'}</span>
                     <span class="device-name" title="${escapeHtml(device.peerId)}">${escapeHtml(displayName(device))}</span>
                 </div>
+                ${device.connected ? `<button class="rotate-btn" data-peer-id="${escapeHtml(device.peerId)}">${escapeHtml(browser.i18n.getMessage('buttonRotateKey'))}</button>` : ''}
                 <button class="unpair-btn" data-peer-id="${escapeHtml(device.peerId)}">${escapeHtml(browser.i18n.getMessage('buttonUnpair'))}</button>
             </div>
         `).join('');
+
+        // Attach rotate handlers
+        container.querySelectorAll('.rotate-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const peerId = btn.dataset.peerId;
+                btn.textContent = browser.i18n.getMessage('buttonRotating');
+                btn.disabled = true;
+                const result = await browser.runtime.sendMessage({ action: "rotateKey", peerId });
+                if (result && result.success) {
+                    btn.textContent = browser.i18n.getMessage('buttonRotated');
+                    setTimeout(() => {
+                        btn.textContent = browser.i18n.getMessage('buttonRotateKey');
+                        btn.disabled = false;
+                    }, 2000);
+                } else {
+                    btn.textContent = result?.error || 'Failed';
+                    setTimeout(() => {
+                        btn.textContent = browser.i18n.getMessage('buttonRotateKey');
+                        btn.disabled = false;
+                    }, 2000);
+                }
+            });
+        });
 
         // Attach unpair handlers
         container.querySelectorAll('.unpair-btn').forEach(btn => {
@@ -284,7 +308,7 @@ Uptime: ${info.uptime || '0s'}`;
     if (info.pairedDevices) {
         text += `\n\nPaired Devices: ${info.pairedDevices.length}`;
         for (const d of info.pairedDevices) {
-            text += `\n  - ${d.peerId} (${d.name})`;
+            text += `\n  - ${d.peerId} (${d.name}, key gen ${d.keyGeneration || 1})`;
         }
     }
     if (info.authenticatedPeers) {

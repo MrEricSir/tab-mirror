@@ -6,7 +6,14 @@ const { PAIRING_CHARSET, normalizePairingCode } = require('../../src/crypto.js')
 globalThis.PAIRING_CHARSET = PAIRING_CHARSET;
 globalThis.normalizePairingCode = normalizePairingCode;
 
-const { isValidPairingCode, getSharedKeyForPeer } = require('../../src/pairing.js');
+// updateDeviceKey expects these globals
+globalThis.pairedDevices = [];
+globalThis.encryptionKeyCache = new Map();
+globalThis.browser = {
+    storage: { local: { set: async () => {}, get: async () => ({}), remove: async () => {} } }
+};
+
+const { isValidPairingCode, getSharedKeyForPeer, updateDeviceKey } = require('../../src/pairing.js');
 
 // --- isValidPairingCode ---
 
@@ -76,5 +83,58 @@ describe('getSharedKeyForPeer', () => {
             { peerId: 'z', sharedKey: 'kz', name: 'Z' },
         ];
         assert.equal(getSharedKeyForPeer('y', many), 'ky');
+    });
+});
+
+// --- updateDeviceKey ---
+
+describe('updateDeviceKey', () => {
+    test('updates key and generation, preserves name and pairedAt', async () => {
+        globalThis.pairedDevices = [
+            { peerId: 'peer-1', sharedKey: 'oldKey', name: 'My Device', pairedAt: 1000, keyGeneration: 1 }
+        ];
+        globalThis.encryptionKeyCache = new Map();
+
+        await updateDeviceKey('peer-1', 'newKey', 2);
+
+        const device = globalThis.pairedDevices[0];
+        assert.equal(device.sharedKey, 'newKey');
+        assert.equal(device.keyGeneration, 2);
+        assert.equal(device.name, 'My Device');
+        assert.equal(device.pairedAt, 1000);
+    });
+
+    test('clears encryptionKeyCache for the peer', async () => {
+        globalThis.pairedDevices = [
+            { peerId: 'peer-2', sharedKey: 'oldKey', name: 'Dev', pairedAt: 2000, keyGeneration: 1 }
+        ];
+        globalThis.encryptionKeyCache = new Map([['peer-2', 'cachedKey']]);
+
+        await updateDeviceKey('peer-2', 'newKey', 3);
+
+        assert.equal(globalThis.encryptionKeyCache.has('peer-2'), false);
+    });
+
+    test('does nothing for unknown peer', async () => {
+        globalThis.pairedDevices = [
+            { peerId: 'peer-3', sharedKey: 'key3', name: 'Dev3', pairedAt: 3000, keyGeneration: 1 }
+        ];
+
+        await updateDeviceKey('unknown-peer', 'newKey', 2);
+
+        // Original device unchanged
+        assert.equal(globalThis.pairedDevices[0].sharedKey, 'key3');
+        assert.equal(globalThis.pairedDevices[0].keyGeneration, 1);
+    });
+
+    test('getSharedKeyForPeer returns new key after rotation', async () => {
+        globalThis.pairedDevices = [
+            { peerId: 'peer-4', sharedKey: 'originalKey', name: 'Dev4', pairedAt: 4000, keyGeneration: 1 }
+        ];
+        globalThis.encryptionKeyCache = new Map();
+
+        await updateDeviceKey('peer-4', 'rotatedKey', 5);
+
+        assert.equal(getSharedKeyForPeer('peer-4', globalThis.pairedDevices), 'rotatedKey');
     });
 });

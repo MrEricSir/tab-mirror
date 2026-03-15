@@ -19,7 +19,7 @@ async function savePairedDevices() {
 
 async function addPairedDevice(peerId, sharedKey, name) {
     const existing = pairedDevices.findIndex(d => d.peerId === peerId);
-    const device = { peerId, sharedKey, name: name || peerId, pairedAt: Date.now() };
+    const device = { peerId, sharedKey, name: name || peerId, pairedAt: Date.now(), keyGeneration: 1 };
     if (existing >= 0) {
         pairedDevices[existing] = device;
     } else {
@@ -28,6 +28,19 @@ async function addPairedDevice(peerId, sharedKey, name) {
     await savePairedDevices();
     encryptionKeyCache.delete(peerId);
     console.log(`[PAIR] Added paired device: ${peerId}`);
+}
+
+async function updateDeviceKey(peerId, newKey, generation) {
+    const device = pairedDevices.find(d => d.peerId === peerId);
+    if (!device) {
+        console.warn(`[KEY] Cannot update key: device ${peerId} not found`);
+        return;
+    }
+    device.sharedKey = newKey;
+    device.keyGeneration = generation;
+    await savePairedDevices();
+    encryptionKeyCache.delete(peerId);
+    console.log(`[KEY] Updated key for ${peerId} to generation ${generation}`);
 }
 
 async function removePairedDevice(peerId) {
@@ -46,6 +59,13 @@ async function removePairedDevice(peerId) {
     syncedPeers.delete(peerId);
     lastKnownRemoteState.delete(peerId);
     encryptionKeyCache.delete(peerId);
+    previousKeyCache.delete(peerId);
+    pendingKeyRotation.delete(peerId);
+    const rotationTimer = keyRotationTimers.get(peerId);
+    if (rotationTimer != null) {
+        clearTimeout(rotationTimer);
+        keyRotationTimers.delete(peerId);
+    }
     console.log(`[PAIR] Removed paired device: ${peerId}`);
 }
 
@@ -319,14 +339,32 @@ function acceptConnection(conn) {
         lastMessageTime.set(conn.peer, Date.now());
         if (data && data.type === 'MIRROR_SYNC_ENCRYPTED') {
             const encKey = await getOrDeriveEncryptionKey(conn.peer);
-            if (!encKey) {
-                console.warn(`[CRYPTO] No decryption key for ${conn.peer}, dropping encrypted message`);
-                fileLog(`No decryption key for ${conn.peer}`, 'SECURITY');
+            let decrypted = null;
+            if (encKey) {
+                decrypted = await decryptState(encKey, data);
+            }
+            // Fallback to previous key during rotation window
+            if (!decrypted) {
+                const prevKey = previousKeyCache.get(conn.peer);
+                if (prevKey) {
+                    decrypted = await decryptState(prevKey, data);
+                }
+            }
+            if (!decrypted) {
+                if (!encKey) {
+                    console.warn(`[CRYPTO] No decryption key for ${conn.peer}, dropping encrypted message`);
+                    fileLog(`No decryption key for ${conn.peer}`, 'SECURITY');
+                } else {
+                    console.warn(`[CRYPTO] Decryption failed for ${conn.peer}, dropping message`);
+                }
                 return;
             }
-            const decrypted = await decryptState(encKey, data);
-            if (decrypted && decrypted.type === 'MIRROR_SYNC') {
+            if (decrypted.type === 'MIRROR_SYNC') {
                 handleSync(decrypted);
+            } else if (decrypted.type === 'KEY_ROTATE') {
+                handleKeyRotation(conn, decrypted);
+            } else if (decrypted.type === 'KEY_ROTATE_ACK') {
+                handleKeyRotationAck(conn.peer, decrypted);
             }
         } else if (data && data.type === 'MIRROR_SYNC') {
             if (TEST_MODE) {
@@ -375,6 +413,164 @@ function acceptConnection(conn) {
 
     // Send current state to new peer after short delay
     trigger(BROADCAST_AFTER_SYNC_MS);
+}
+
+// Key Rotation
+// Allows either peer to trigger a key refresh over the existing encrypted channel.
+// Both peers enter a 2-minute dual-key window during which both old and new keys
+// are accepted for incoming messages.
+
+function startKeyRotationTimer(peerId) {
+    // Clear any existing timer
+    const existing = keyRotationTimers.get(peerId);
+    if (existing != null) {
+        clearTimeout(existing);
+    }
+    const timerId = setTimeout(() => {
+        previousKeyCache.delete(peerId);
+        keyRotationTimers.delete(peerId);
+        console.log(`[KEY] Rotation window closed for ${peerId}, previous key cleared`);
+    }, KEY_ROTATION_WINDOW_MS);
+    keyRotationTimers.set(peerId, timerId);
+}
+
+async function rotateKeyForPeer(peerId) {
+    // Reject if rotation already in progress
+    if (pendingKeyRotation.has(peerId)) {
+        console.log(`[KEY] Rotation already in progress for ${peerId}, skipping`);
+        return { success: false, error: 'Rotation already in progress' };
+    }
+
+    const conn = connections.get(peerId);
+    if (!conn) {
+        return { success: false, error: 'Not connected to peer' };
+    }
+
+    const device = pairedDevices.find(d => d.peerId === peerId);
+    if (!device) {
+        return { success: false, error: 'Device not found' };
+    }
+
+    const currentGen = device.keyGeneration || 1;
+    const newGeneration = currentGen + 1;
+
+    // Generate a new shared key
+    const newKey = await generateSharedKey();
+
+    // Cache the current derived key as the previous key
+    const currentDerivedKey = await getOrDeriveEncryptionKey(peerId);
+    if (currentDerivedKey) {
+        previousKeyCache.set(peerId, currentDerivedKey);
+    }
+
+    // Store pending rotation (we don't switch outgoing key until ACK)
+    pendingKeyRotation.set(peerId, { newKey, generation: newGeneration });
+
+    // Send KEY_ROTATE encrypted with current key
+    const rotateMsg = { type: 'KEY_ROTATE', newKey, generation: newGeneration };
+    const encKey = await getOrDeriveEncryptionKey(peerId);
+    if (!encKey) {
+        pendingKeyRotation.delete(peerId);
+        return { success: false, error: 'No encryption key available' };
+    }
+    const encrypted = await encryptState(encKey, rotateMsg);
+    try {
+        conn.send(encrypted);
+    } catch (e) {
+        pendingKeyRotation.delete(peerId);
+        return { success: false, error: 'Failed to send rotation request' };
+    }
+
+    // Start 2-minute timer for dual-key window
+    startKeyRotationTimer(peerId);
+
+    console.log(`[KEY] Initiated key rotation for ${peerId} to generation ${newGeneration}`);
+    return { success: true, generation: newGeneration };
+}
+
+async function handleKeyRotation(conn, data) {
+    const peerId = conn.peer;
+    const device = pairedDevices.find(d => d.peerId === peerId);
+    if (!device) {
+        console.warn(`[KEY] Received KEY_ROTATE from unknown device ${peerId}`);
+        return;
+    }
+
+    const currentGen = device.keyGeneration || 1;
+
+    // Simultaneous rotation tiebreak: higher generation wins; same generation, lower peer ID wins
+    if (data.generation <= currentGen) {
+        console.log(`[KEY] Ignoring KEY_ROTATE with stale generation ${data.generation} (current: ${currentGen}) from ${peerId}`);
+        return;
+    }
+
+    // If we also have a pending rotation, resolve the conflict
+    if (pendingKeyRotation.has(peerId)) {
+        const pending = pendingKeyRotation.get(peerId);
+        if (data.generation > pending.generation) {
+            // Their generation is higher, accept theirs
+            pendingKeyRotation.delete(peerId);
+        } else if (data.generation === pending.generation) {
+            // Same generation: lower peer ID wins
+            if (myDeviceId < peerId) {
+                // We win, ignore their rotation
+                console.log(`[KEY] Simultaneous rotation tiebreak: we win (lower ID), ignoring their KEY_ROTATE`);
+                return;
+            } else {
+                // They win, accept theirs
+                pendingKeyRotation.delete(peerId);
+            }
+        } else {
+            // Our generation is higher, ignore theirs
+            console.log(`[KEY] Simultaneous rotation tiebreak: our pending generation is higher, ignoring their KEY_ROTATE`);
+            return;
+        }
+    }
+
+    // Cache current derived key as previous key
+    const currentDerivedKey = await getOrDeriveEncryptionKey(peerId);
+    if (currentDerivedKey) {
+        previousKeyCache.set(peerId, currentDerivedKey);
+    }
+
+    // Update to new key
+    await updateDeviceKey(peerId, data.newKey, data.generation);
+
+    // Send ACK encrypted with the NEW key
+    const newEncKey = await getOrDeriveEncryptionKey(peerId);
+    if (newEncKey) {
+        const ackMsg = { type: 'KEY_ROTATE_ACK', generation: data.generation };
+        const encrypted = await encryptState(newEncKey, ackMsg);
+        try {
+            conn.send(encrypted);
+        } catch (e) {
+            console.warn(`[KEY] Failed to send KEY_ROTATE_ACK to ${peerId}:`, e.message);
+        }
+    }
+
+    // Start 2-minute dual-key window
+    startKeyRotationTimer(peerId);
+
+    console.log(`[KEY] Rotated key for ${peerId} to generation ${data.generation}`);
+}
+
+async function handleKeyRotationAck(peerId, data) {
+    const pending = pendingKeyRotation.get(peerId);
+    if (!pending) {
+        console.warn(`[KEY] Received KEY_ROTATE_ACK from ${peerId} but no rotation pending`);
+        return;
+    }
+
+    if (data.generation !== pending.generation) {
+        console.warn(`[KEY] KEY_ROTATE_ACK generation mismatch from ${peerId}: expected ${pending.generation}, got ${data.generation}`);
+        return;
+    }
+
+    // Switch to new key
+    await updateDeviceKey(peerId, pending.newKey, pending.generation);
+    pendingKeyRotation.delete(peerId);
+
+    console.log(`[KEY] Key rotation complete for ${peerId} (generation ${data.generation})`);
 }
 
 function authenticateConnection(conn) {
@@ -456,5 +652,5 @@ function authenticateConnection(conn) {
 }
 
 if (typeof module !== 'undefined') {
-    module.exports = { isValidPairingCode, getSharedKeyForPeer };
+    module.exports = { isValidPairingCode, getSharedKeyForPeer, updateDeviceKey };
 }

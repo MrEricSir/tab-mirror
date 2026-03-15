@@ -242,8 +242,8 @@ describe('formatDebugInfo', () => {
             ]
         });
         assert.ok(result.includes('Paired Devices: 2'));
-        assert.ok(result.includes('- peer-1 (Firefox on macOS)'));
-        assert.ok(result.includes('- peer-2 (Firefox on Windows)'));
+        assert.ok(result.includes('- peer-1 (Firefox on macOS, key gen 1)'));
+        assert.ok(result.includes('- peer-2 (Firefox on Windows, key gen 1)'));
     });
 
     test('lists authenticated peers when present', () => {
