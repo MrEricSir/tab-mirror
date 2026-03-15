@@ -120,6 +120,7 @@ let previousKeyCache = new Map();    // peerId -> CryptoKey (old key during rota
 let keyRotationTimers = new Map();   // peerId -> timeout ID for clearing previousKey
 let pendingKeyRotation = new Map();  // peerId -> { newKey, generation }
 const KEY_ROTATION_WINDOW_MS = 120000; // 2 minutes
+const AUTO_KEY_ROTATION_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 let notifiedPeers = new Set();       // peers we've already shown a connection notification for
 let notificationLog = [];            // notification log for testing
 const MAX_NOTIFICATION_LOG = 50;

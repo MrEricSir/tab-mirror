@@ -163,6 +163,20 @@ class TabMirrorBridge extends TestBridge {
     return await this._sendToTabMirror({ action: 'getSyncPaused' });
   }
 
+  /**
+   * Rotate the encryption key for a paired device
+   */
+  async rotateKey(peerId) {
+    return await this._sendToTabMirror({ action: 'rotateKey', peerId });
+  }
+
+  /**
+   * Get the current key generation for a paired device
+   */
+  async getKeyGeneration(peerId) {
+    return await this._sendToTabMirror({ action: 'getKeyGeneration', peerId });
+  }
+
   async muteOutgoing(muted) {
     return await this._sendToTabMirror({ action: 'muteOutgoing', muted });
   }
@@ -213,8 +227,8 @@ class TabMirrorBridge extends TestBridge {
   /**
    * Add a paired device
    */
-  async addPairedDevice(peerId, name) {
-    return await this._sendToTabMirror({ action: 'addPairedDevice', peerId, name });
+  async addPairedDevice(peerId, name, sharedKey) {
+    return await this._sendToTabMirror({ action: 'addPairedDevice', peerId, name, sharedKey });
   }
 
   /**

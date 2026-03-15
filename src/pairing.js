@@ -19,7 +19,7 @@ async function savePairedDevices() {
 
 async function addPairedDevice(peerId, sharedKey, name) {
     const existing = pairedDevices.findIndex(d => d.peerId === peerId);
-    const device = { peerId, sharedKey, name: name || peerId, pairedAt: Date.now(), keyGeneration: 1 };
+    const device = { peerId, sharedKey, name: name || peerId, pairedAt: Date.now(), keyGeneration: 1, lastKeyRotation: Date.now() };
     if (existing >= 0) {
         pairedDevices[existing] = device;
     } else {
@@ -38,6 +38,7 @@ async function updateDeviceKey(peerId, newKey, generation) {
     }
     device.sharedKey = newKey;
     device.keyGeneration = generation;
+    device.lastKeyRotation = Date.now();
     await savePairedDevices();
     encryptionKeyCache.delete(peerId);
     console.log(`[KEY] Updated key for ${peerId} to generation ${generation}`);
@@ -350,6 +351,16 @@ function acceptConnection(conn) {
                     decrypted = await decryptState(prevKey, data);
                 }
             }
+            // Fallback to pending rotation key (initiator needs this to decrypt
+            // the ACK and any messages the receiver sends with the new key
+            // before the initiator has processed the ACK)
+            if (!decrypted && pendingKeyRotation.has(conn.peer)) {
+                const pending = pendingKeyRotation.get(conn.peer);
+                const pendingCryptoKey = await deriveEncryptionKey(pending.newKey);
+                if (pendingCryptoKey) {
+                    decrypted = await decryptState(pendingCryptoKey, data);
+                }
+            }
             if (!decrypted) {
                 if (!encKey) {
                     console.warn(`[CRYPTO] No decryption key for ${conn.peer}, dropping encrypted message`);
@@ -571,6 +582,30 @@ async function handleKeyRotationAck(peerId, data) {
     pendingKeyRotation.delete(peerId);
 
     console.log(`[KEY] Key rotation complete for ${peerId} (generation ${data.generation})`);
+}
+
+// Automatic Key Rotation
+// Called periodically (piggybacks on the health check interval).
+// Rotates keys for any connected peer whose key is older than
+// AUTO_KEY_ROTATION_INTERVAL_MS (7 days by default).
+async function checkAutoKeyRotation() {
+    if (TEST_MODE) {
+        return;
+    }
+    const now = Date.now();
+    for (const device of pairedDevices) {
+        if (!connections.has(device.peerId)) {
+            continue;
+        }
+        if (pendingKeyRotation.has(device.peerId)) {
+            continue;
+        }
+        const lastRotation = device.lastKeyRotation || device.pairedAt || 0;
+        if ((now - lastRotation) >= AUTO_KEY_ROTATION_INTERVAL_MS) {
+            console.log(`[KEY] Auto-rotating key for ${device.peerId} (last rotation: ${Math.round((now - lastRotation) / 86400000)}d ago)`);
+            await rotateKeyForPeer(device.peerId);
+        }
+    }
 }
 
 function authenticateConnection(conn) {

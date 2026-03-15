@@ -155,15 +155,24 @@ async function testDisconnectNotificationAfterDelay(browserA, browserB) {
   console.log('  Disconnecting A from B...');
   await browserA.testBridge.disconnectPeer(stateB.myDeviceId);
 
-  // Wait for the close event (async) + 100ms timer to fire
-  console.log('  Waiting for disconnect notification (100ms delay)...');
-  await sleep(1500);
+  // Wait for the close event (async WebRTC teardown) + 100ms timer to fire.
+  // The close event fires asynchronously after WebRTC cleanup completes,
+  // which can take a variable amount of time, so we poll instead of
+  // using a fixed sleep.
+  console.log('  Waiting for disconnect notification (polling)...');
+  let disconnectNotif = null;
+  for (let i = 0; i < 20; i++) {
+    await sleep(500);
+    const logCheck = await browserA.testBridge.getNotificationLog();
+    disconnectNotif = logCheck.log.find(n => n.message.includes('Disconnected from'));
+    if (disconnectNotif) {
+      break;
+    }
+  }
 
   const logAfter = await browserA.testBridge.getNotificationLog();
   console.log(`  Notifications after disconnect: ${logAfter.log.length}`);
 
-  // Should have a disconnect notification now
-  const disconnectNotif = logAfter.log.find(n => n.message.includes('Disconnected from'));
   await Assert.isTrue(!!disconnectNotif, 'Should have a "Disconnected from" notification');
   console.log(`  Disconnect notification: "${disconnectNotif.message}"`);
 
@@ -250,14 +259,21 @@ async function testDisconnectNotificationEnablesReconnectNotification(browserA, 
   // Prevent race with notification timer.
   await browserA.testBridge.pauseDiscovery();
 
-  // Disconnect and wait for disconnect notification (100ms + close event delay)
+  // Disconnect and wait for disconnect notification (100ms + async close event)
   console.log('  Disconnecting and waiting for disconnect notification...');
   await browserA.testBridge.disconnectPeer(stateB.myDeviceId);
-  await sleep(1500);
 
-  // Verify disconnect fired
-  const logAfterDisconnect = await browserA.testBridge.getNotificationLog();
-  const disconnectCount = logAfterDisconnect.log.filter(n => n.message.includes('Disconnected from')).length;
+  // Poll for the disconnect notification instead of fixed sleep
+  let disconnectCount = 0;
+  for (let i = 0; i < 20; i++) {
+    await sleep(500);
+    const logCheck = await browserA.testBridge.getNotificationLog();
+    disconnectCount = logCheck.log.filter(n => n.message.includes('Disconnected from')).length;
+    if (disconnectCount > 0) {
+      break;
+    }
+  }
+
   console.log(`  Disconnect notifications: ${disconnectCount}`);
   await Assert.equal(disconnectCount, 1, 'Should have 1 disconnect notification');
 

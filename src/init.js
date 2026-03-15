@@ -336,7 +336,10 @@ function runHealthCheck() {
         }
     }
 }
-setInterval(runHealthCheck, HEALTH_CHECK_INTERVAL_MS);
+setInterval(() => {
+    runHealthCheck();
+    checkAutoKeyRotation();
+}, HEALTH_CHECK_INTERVAL_MS);
 
 // Cleanup on Unload/Suspend
 // Closes all peer connections gracefully before destroying the transport.

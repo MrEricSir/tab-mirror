@@ -406,6 +406,19 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 };
             }
 
+            case 'rotateKey': {
+                const result = await rotateKeyForPeer(message.peerId);
+                return { success: true, data: result };
+            }
+
+            case 'getKeyGeneration': {
+                const device = pairedDevices.find(d => d.peerId === message.peerId);
+                if (!device) {
+                    return { success: true, data: { keyGeneration: null } };
+                }
+                return { success: true, data: { keyGeneration: device.keyGeneration || 1 } };
+            }
+
             case 'muteOutgoing': {
                 outgoingMuted = message.muted;
                 return { success: true, data: `Outgoing muted: ${outgoingMuted}` };
