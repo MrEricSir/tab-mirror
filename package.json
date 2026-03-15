@@ -34,10 +34,12 @@
     "geckodriver": "^4.0.0",
     "peer": "^1.0.2",
     "selenium-webdriver": "^4.16.0",
-    "selenium-webext-bridge": "^0.3.0",
     "web-ext": "^8.10.0"
   },
   "engines": {
     "node": ">=16.0.0"
+  },
+  "dependencies": {
+    "selenium-webext-bridge": "^0.4.0"
   }
 }
