@@ -17,6 +17,13 @@ const modes = {
     test: true
 };
 
+// Files excluded from production builds (test-only or unnecessary)
+const PRODUCTION_EXCLUDE = new Set([
+    'content-test.js',
+    'peerjs.min.js.map',
+    '.DS_Store',
+]);
+
 function log(message) {
     console.log(`[BUILD] ${message}`);
 }
@@ -35,7 +42,7 @@ function setTestMode(content, testMode) {
     );
 }
 
-function copyDir(src, dest, processFile = null, processManifest = null) {
+function copyDir(src, dest, { processFile = null, processManifest = null, exclude = null } = {}) {
     ensureDir(dest);
     const entries = fs.readdirSync(src, { withFileTypes: true });
 
@@ -43,8 +50,12 @@ function copyDir(src, dest, processFile = null, processManifest = null) {
         const srcPath = path.join(src, entry.name);
         const destPath = path.join(dest, entry.name);
 
+        if (exclude && exclude.has(entry.name)) {
+            continue;
+        }
+
         if (entry.isDirectory()) {
-            copyDir(srcPath, destPath, processFile, processManifest);
+            copyDir(srcPath, destPath, { processFile, processManifest, exclude });
         } else {
             let content = fs.readFileSync(srcPath);
 
@@ -88,7 +99,12 @@ function buildMode(mode) {
     } : null;
 
     // Copy source files with TEST_MODE transformation
-    copyDir(SRC_DIR, buildPath, (content) => setTestMode(content, testMode), manifestProcessor);
+    const exclude = testMode ? null : PRODUCTION_EXCLUDE;
+    copyDir(SRC_DIR, buildPath, {
+        processFile: (content) => setTestMode(content, testMode),
+        processManifest: manifestProcessor,
+        exclude,
+    });
 
     log(`  ✓ Copied files to build/${mode}/`);
 
