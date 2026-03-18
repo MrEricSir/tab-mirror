@@ -29,7 +29,8 @@
     "test:popup": "npm run build:test && node tests/run-with-server.js tests/integration/popup-ui.test.js",
     "lint": "web-ext lint --source-dir=src",
     "verify": "node verify-build.js",
-    "version:bump": "node bump-version.js"
+    "version:bump": "node bump-version.js",
+    "release": "node release.js"
   },
   "devDependencies": {
     "geckodriver": "^4.0.0",
