@@ -11,10 +11,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v5
       with:
         node-version: '18'
 
@@ -23,17 +23,11 @@ jobs:
       with:
         firefox-version: latest
 
-    - name: Install geckodriver
-      uses: browser-actions/setup-geckodriver@latest
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-
     - name: Verify Firefox and geckodriver
       run: |
         which firefox
         firefox --version
-        which geckodriver
-        geckodriver --version
+        npx geckodriver --version
 
     - name: Install dependencies
       run: npm install
