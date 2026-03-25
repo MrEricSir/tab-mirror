@@ -805,8 +805,20 @@ async function syncGroupsIncremental(remoteTabs, remoteGroups, prevState) {
                     try {
                         const tab = await browser.tabs.get(localTabId);
                         if (tab.groupId !== localGroupId) {
+                            // Preserve collapsed state when new tab is added to a collapsed
+                            // tab group via sync.
+                            let wasCollapsed = false;
+                            try {
+                                const groupState = await browser.tabGroups.get(localGroupId);
+                                wasCollapsed = groupState.collapsed;
+                            } catch (e) {
+                                // group might be gone
+                            }
                             try {
                                 await browser.tabs.group({ tabIds: [localTabId], groupId: localGroupId });
+                                if (wasCollapsed) {
+                                    await browser.tabGroups.update(localGroupId, { collapsed: true });
+                                }
                                 changed = true;
                             } catch (groupErr) {
                                 // Group was probably destroyed by reorderTabs (tabs.move removes tabs from groups).
@@ -816,7 +828,8 @@ async function syncGroupsIncremental(remoteTabs, remoteGroups, prevState) {
                                 localGroupId = await browser.tabs.group({ tabIds: [localTabId] });
                                 await browser.tabGroups.update(localGroupId, {
                                     title: groupInfo.title || '',
-                                    color: groupInfo.color || 'grey'
+                                    color: groupInfo.color || 'grey',
+                                    collapsed: wasCollapsed
                                 });
                                 groupSyncIds.set(localGroupId, gSyncId);
                                 localGroupChanges.set(gSyncId, groupInfo.lastModified || Date.now());

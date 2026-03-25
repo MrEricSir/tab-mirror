@@ -210,6 +210,103 @@ async function testInitialSyncMultipleGroups() {
   }
 }
 
+async function testCollapsedGroupStaysCollapsed() {
+  console.log();
+  console.log('Test: Adding Tab to Collapsed Group Preserves Collapsed State');
+
+  let browserA, browserB;
+
+  try {
+    console.log('  Launching Browser A...');
+    browserA = await launchBrowser();
+    await sleep(1500);
+
+    const groupCheck = await browserA.testBridge.getGroupCount();
+    if (groupCheck.error) {
+      console.log('  tabGroups API not available, skipping');
+      results.pass('Collapsed Group Preserved (skipped - no tabGroups API)');
+      return;
+    }
+
+    // Create a group with two tabs on A
+    const t1 = await browserA.testBridge.createTab(generateTestUrl('collapse-1'));
+    const t2 = await browserA.testBridge.createTab(generateTestUrl('collapse-2'));
+    await sleep(500);
+
+    console.log('  Creating group "Work" on A...');
+    try {
+      await browserA.testBridge.groupTabs([t1.id, t2.id], 'Work', 'blue');
+    } catch (error) {
+      if (error.message && error.message.includes('Tab Groups API not available')) {
+        results.pass('Collapsed Group Preserved (skipped)');
+        return;
+      }
+      throw error;
+    }
+    await sleep(500);
+
+    // Launch B, let it sync the group
+    console.log('  Launching Browser B...');
+    browserB = await launchBrowser();
+
+    await browserA.testBridge.waitForConnections(1, 30000);
+    await browserB.testBridge.waitForConnections(1, 30000);
+    await browserA.testBridge.waitForSyncComplete(15000);
+    await browserB.testBridge.waitForSyncComplete(15000);
+    await sleep(1500);
+    await browserA.testBridge.waitForSyncComplete(10000);
+    await browserB.testBridge.waitForSyncComplete(10000);
+
+    // Verify group synced to B
+    const groupsB = await browserB.testBridge.getGroupCount();
+    const workGroupB = groupsB.groupDetails.find(g => g.title === 'Work');
+    await Assert.isTrue(!!workGroupB, 'B should have "Work" group');
+    await Assert.equal(workGroupB.tabCount, 2, 'B "Work" group should have 2 tabs');
+
+    // Collapse the group on B
+    console.log('  Collapsing "Work" group on B...');
+    await browserB.testBridge.collapseGroup(workGroupB.id, true);
+    await sleep(500);
+
+    // Verify it's collapsed
+    const groupsB2 = await browserB.testBridge.getGroupCount();
+    const workGroupB2 = groupsB2.groupDetails.find(g => g.title === 'Work');
+    await Assert.isTrue(workGroupB2.collapsed, 'B "Work" group should be collapsed');
+
+    // Add a new tab to the group on A
+    console.log('  Adding new tab to "Work" group on A...');
+    const t3 = await browserA.testBridge.createTab(generateTestUrl('collapse-3'));
+    await browserA.testBridge.waitForTabLoad(t3.id);
+
+    const groupsA = await browserA.testBridge.getGroupCount();
+    const workGroupA = groupsA.groupDetails.find(g => g.title === 'Work');
+    await browserA.testBridge.groupTabs([t3.id], 'Work', 'blue', workGroupA.id);
+    await sleep(500);
+
+    // Wait for sync
+    console.log('  Waiting for sync...');
+    await browserA.testBridge.waitForSyncComplete(10000);
+    await sleep(1500);
+    await browserB.testBridge.waitForSyncComplete(10000);
+
+    // Verify B got the new tab in the group
+    const groupsB3 = await browserB.testBridge.getGroupCount();
+    const workGroupB3 = groupsB3.groupDetails.find(g => g.title === 'Work');
+    await Assert.isTrue(!!workGroupB3, 'B should still have "Work" group');
+    await Assert.equal(workGroupB3.tabCount, 3, 'B "Work" group should now have 3 tabs');
+
+    // The key assertion: group should still be collapsed
+    console.log(`  B "Work" group collapsed: ${workGroupB3.collapsed}`);
+    await Assert.isTrue(workGroupB3.collapsed, 'B "Work" group should still be collapsed after sync');
+
+    results.pass('Collapsed Group Preserved');
+  } finally {
+    console.log('  Cleaning up...');
+    await cleanupBrowser(browserA);
+    await cleanupBrowser(browserB);
+  }
+}
+
 async function main() {
   console.log('='.repeat(60));
   console.log('INITIAL GROUP SYNC TESTS');
@@ -218,6 +315,7 @@ async function main() {
   const tests = [
     testInitialSyncNoGroupDuplication,
     testInitialSyncMultipleGroups,
+    testCollapsedGroupStaysCollapsed,
   ];
 
   for (const test of tests) {

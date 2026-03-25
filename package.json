@@ -27,6 +27,7 @@
     "test:concurrent": "npm run build:test && node tests/run-with-server.js tests/integration/concurrent-sync.test.js",
     "test:blank": "npm run build:test && node tests/run-with-server.js tests/integration/blank-tab-merge.test.js",
     "test:popup": "npm run build:test && node tests/run-with-server.js tests/integration/popup-ui.test.js",
+    "test:echo": "npm run build:test && node tests/run-with-server.js tests/integration/sync-echo.test.js",
     "lint": "web-ext lint --source-dir=src",
     "verify": "node verify-build.js",
     "version:bump": "node bump-version.js",

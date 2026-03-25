@@ -126,10 +126,20 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                             id: g.id,
                             title: g.title,
                             color: g.color,
+                            collapsed: g.collapsed,
                             tabCount: tabs.filter(t => t.groupId === g.id).length
                         }))
                     }
                 };
+            }
+
+            case 'collapseGroup': {
+                // Test-only: set collapsed state on a tab group
+                if (!browser.tabGroups) {
+                    return { success: false, error: 'Tab Groups API not available' };
+                }
+                await browser.tabGroups.update(message.groupId, { collapsed: !!message.collapsed });
+                return { success: true, data: 'Group collapsed state updated' };
             }
 
             case 'addPairedDevice': {

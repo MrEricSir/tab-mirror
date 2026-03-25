@@ -225,6 +225,13 @@ class TabMirrorBridge extends TestBridge {
   }
 
   /**
+   * Set collapsed state on a tab group (test-only)
+   */
+  async collapseGroup(groupId, collapsed) {
+    return await this._sendToTabMirror({ action: 'collapseGroup', groupId, collapsed });
+  }
+
+  /**
    * Add a paired device
    */
   async addPairedDevice(peerId, name, sharedKey) {
