@@ -897,6 +897,22 @@ async function performIncrementalSync(remoteState) {
     const addUpdate = await syncAddedAndUpdatedTabs(remoteTabs, prevState, diff);
     const removed = await syncRemovedTabs(diff.removed);
 
+    // Snapshot collapsed group IDs before reorder + group sync.
+    // tabs.move() and tabs.group() can both disturb Firefox's collapsed state.
+    const collapsedGroupIds = new Set();
+    if (browser.tabGroups) {
+        try {
+            const groups = await browser.tabGroups.query({ windowId: syncWindowId });
+            for (const g of groups) {
+                if (g.collapsed) {
+                    collapsedGroupIds.add(g.id);
+                }
+            }
+        } catch (e) {
+            // tabGroups API might not work
+        }
+    }
+
     const reordered = await reorderTabs(remoteTabs);
 
     const groupsChanged = await syncGroupsIncremental(remoteTabs, remoteState.groups, prevState);
@@ -904,6 +920,21 @@ async function performIncrementalSync(remoteState) {
     // Reorder if tab groups have changed to maintain a stable order.
     if (groupsChanged) {
         await reorderTabs(remoteTabs);
+    }
+
+    // Restore collapsed state for any groups that got expanded by
+    // tabs.move() or tabs.group() during the reorder/group sync above.
+    if (collapsedGroupIds.size > 0 && browser.tabGroups) {
+        try {
+            const groupsAfter = await browser.tabGroups.query({ windowId: syncWindowId });
+            for (const g of groupsAfter) {
+                if (collapsedGroupIds.has(g.id) && !g.collapsed) {
+                    await browser.tabGroups.update(g.id, { collapsed: true });
+                }
+            }
+        } catch (e) {
+            // best-effort
+        }
     }
 
     const changed = addUpdate.added > 0 || addUpdate.updated > 0 || removed > 0 || reordered || groupsChanged;
