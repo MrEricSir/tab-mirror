@@ -91,7 +91,7 @@ async function updateUI() {
                 noBanner.style.display = 'none';
                 pairButtons.style.display = 'flex';
             } else if (noSyncWindow && hasPaired) {
-                // Sync window was closed and we have paired devices
+                // No sync window (closed or never chosen) and we have paired devices
                 wrongBanner.style.display = 'none';
                 noBanner.style.display = 'block';
                 pairButtons.style.display = 'flex';

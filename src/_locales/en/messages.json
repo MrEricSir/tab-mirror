@@ -142,7 +142,7 @@
     "message": "Syncing from another window"
   },
   "bannerNoSyncWindow": {
-    "message": "Sync window was closed"
+    "message": "No active sync window"
   },
   "buttonSwitchWindow": {
     "message": "Switch to this window"
