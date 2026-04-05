@@ -115,15 +115,34 @@ async function testTabPropagationFromEachPeer(browsers) {
     await browsers[source].testBridge.waitForTabLoad(tab.id);
     console.log(`  Browser ${source + 1} created: ${tag}`);
 
-    await browsers[source].testBridge.waitForSyncComplete(15000);
+    // Wait for tab to propagate to all other browsers, triggering extra
+    // sync rounds if needed (CI can be slow to start sync cycles).
+    const propDeadline = Date.now() + SYNC_PROPAGATION_TIMEOUT;
+    let allReceived = false;
 
-    // Check all other browsers receive it
+    while (Date.now() < propDeadline && !allReceived) {
+      await browsers[source].testBridge.triggerSync();
+      await sleep(1500);
+      allReceived = true;
+      for (let target = 0; target < browsers.length; target++) {
+        if (target === source) {
+          continue;
+        }
+        const tabs = await browsers[target].testBridge.getTabs();
+        if (!tabs.some(t => (t.url || '').includes(tag))) {
+          allReceived = false;
+          break;
+        }
+      }
+    }
+
     for (let target = 0; target < browsers.length; target++) {
       if (target === source) {
         continue;
       }
-      const found = await browsers[target].testBridge.waitForTabUrl(tag, SYNC_PROPAGATION_TIMEOUT);
-      await Assert.isTrue(!!found, `Browser ${target + 1} should receive tab from Browser ${source + 1}`);
+      const tabs = await browsers[target].testBridge.getTabs();
+      const found = tabs.some(t => (t.url || '').includes(tag));
+      await Assert.isTrue(found, `Browser ${target + 1} should receive tab from Browser ${source + 1}`);
     }
     console.log(`  All peers received tab from Browser ${source + 1}`);
   }
@@ -144,20 +163,36 @@ async function testSimultaneousTabCreation(browsers) {
     browsers.map((b, i) => b.testBridge.createTab(urls[i]))
   );
 
-  // Wait for convergence
+  // Wait for convergence by polling for actual tab presence, triggering
+  // extra sync rounds as needed.  With 5 peers creating tabs simultaneously,
+  // full propagation can take several rounds of broadcast/apply cycles.
   console.log('  Waiting for convergence...');
-  await sleep(1500);
-  for (const b of browsers) {
-    await b.testBridge.waitForSyncComplete(15000);
+  const convergenceDeadline = Date.now() + SYNC_PROPAGATION_TIMEOUT * 2;
+  let converged = false;
+
+  while (Date.now() < convergenceDeadline && !converged) {
+    for (const b of browsers) {
+      await b.testBridge.triggerSync();
+    }
+    await sleep(2000);
+
+    converged = true;
+    for (let i = 0; i < browsers.length; i++) {
+      const tabs = await browsers[i].testBridge.getTabs();
+      const tabUrls = tabs.map(t => t.url || '');
+      for (const tag of tags) {
+        if (!tabUrls.some(u => u.includes(tag))) {
+          converged = false;
+          break;
+        }
+      }
+      if (!converged) {
+        break;
+      }
+    }
   }
 
-  // Extra time for multi-hop propagation
-  await sleep(2000);
-  for (const b of browsers) {
-    await b.testBridge.waitForSyncComplete(15000);
-  }
-
-  // Every browser should have every tab
+  // Final check with diagnostics
   for (let i = 0; i < browsers.length; i++) {
     const tabs = await browsers[i].testBridge.getTabs();
     const tabUrls = tabs.map(t => t.url || '');
