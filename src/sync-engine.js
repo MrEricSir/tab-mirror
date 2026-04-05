@@ -540,6 +540,23 @@ async function replaceLocalState(targetTabs, targetGroups = {}) {
     // Reorder tabs to match remote ordering (must happen before grouping)
     await reorderTabs(targetTabs);
 
+    // Snapshot collapsed groups before ungrouping. Groups are destroyed and
+    // recreated below, so we remember collapsed state by title+color and
+    // restore it after recreation.
+    const collapsedGroups = new Set();
+    if (browser.tabGroups) {
+        try {
+            const existingGroups = await browser.tabGroups.query({ windowId: syncWindowId });
+            for (const g of existingGroups) {
+                if (g.collapsed) {
+                    collapsedGroups.add(`${g.title || ''}|${g.color || 'grey'}`);
+                }
+            }
+        } catch (e) {
+            // tabGroups API might not work
+        }
+    }
+
     // Ungroup ALL syncable tabs so stale Firefox groups don't interfere with
     // the fresh grouping below. Firefox can auto-group newly created tabs into
     // an adjacent existing group, so we need to clear everything first.
@@ -558,6 +575,21 @@ async function replaceLocalState(targetTabs, targetGroups = {}) {
 
     // Create tab groups
     await createTargetGroups(targetTabs, targetGroups);
+
+    // Restore collapsed state for recreated groups
+    if (collapsedGroups.size > 0 && browser.tabGroups) {
+        try {
+            const newGroups = await browser.tabGroups.query({ windowId: syncWindowId });
+            for (const g of newGroups) {
+                const key = `${g.title || ''}|${g.color || 'grey'}`;
+                if (collapsedGroups.has(key)) {
+                    await browser.tabGroups.update(g.id, { collapsed: true });
+                }
+            }
+        } catch (e) {
+            // best-effort
+        }
+    }
 
     console.log(`[REPLACE] Done. ${tabSyncIds.size} tabs created.`);
     fileLog(`Replaced: ${tabSyncIds.size} tabs`, 'REPLACE');

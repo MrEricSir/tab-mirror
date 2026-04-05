@@ -307,6 +307,90 @@ async function testCollapsedGroupStaysCollapsed() {
   }
 }
 
+async function testCollapsedGroupSurvivesAtomicMerge() {
+  console.log();
+  console.log('Test: Collapsed Groups Survive New Peer Connecting (Atomic Merge)');
+
+  let browserA, browserB;
+
+  try {
+    // Launch A, set up groups, collapse them
+    console.log('  Launching Browser A...');
+    browserA = await launchBrowser();
+    await sleep(1500);
+
+    const groupCheck = await browserA.testBridge.getGroupCount();
+    if (groupCheck.error) {
+      console.log('  tabGroups API not available, skipping');
+      results.pass('Collapsed Survives Atomic Merge (skipped - no tabGroups API)');
+      return;
+    }
+
+    const t1 = await browserA.testBridge.createTab(generateTestUrl('atomic-grp-1'));
+    const t2 = await browserA.testBridge.createTab(generateTestUrl('atomic-grp-2'));
+    const t3 = await browserA.testBridge.createTab(generateTestUrl('atomic-grp-3'));
+    const t4 = await browserA.testBridge.createTab(generateTestUrl('atomic-grp-4'));
+    await sleep(500);
+
+    console.log('  Creating groups on A...');
+    try {
+      await browserA.testBridge.groupTabs([t1.id, t2.id], 'Alpha', 'blue');
+      await browserA.testBridge.groupTabs([t3.id, t4.id], 'Beta', 'red');
+    } catch (error) {
+      if (error.message && error.message.includes('Tab Groups API not available')) {
+        results.pass('Collapsed Survives Atomic Merge (skipped)');
+        return;
+      }
+      throw error;
+    }
+    await sleep(500);
+
+    // Collapse both groups
+    console.log('  Collapsing both groups on A...');
+    const groupsA = await browserA.testBridge.getGroupCount();
+    const alphaA = groupsA.groupDetails.find(g => g.title === 'Alpha');
+    const betaA = groupsA.groupDetails.find(g => g.title === 'Beta');
+    await browserA.testBridge.collapseGroup(alphaA.id, true);
+    await browserA.testBridge.collapseGroup(betaA.id, true);
+    await sleep(500);
+
+    // Verify collapsed
+    const groupsA2 = await browserA.testBridge.getGroupCount();
+    await Assert.isTrue(groupsA2.groupDetails.find(g => g.title === 'Alpha').collapsed, 'Alpha should be collapsed');
+    await Assert.isTrue(groupsA2.groupDetails.find(g => g.title === 'Beta').collapsed, 'Beta should be collapsed');
+
+    // Launch B - this triggers atomic merge on A
+    console.log('  Launching Browser B (triggers atomic merge on A)...');
+    browserB = await launchBrowser();
+
+    await browserA.testBridge.waitForConnections(1, 30000);
+    await browserB.testBridge.waitForConnections(1, 30000);
+    await browserA.testBridge.waitForSyncComplete(15000);
+    await browserB.testBridge.waitForSyncComplete(15000);
+    await sleep(1500);
+    await browserA.testBridge.waitForSyncComplete(10000);
+    await browserB.testBridge.waitForSyncComplete(10000);
+
+    // Key assertion: A's groups should still be collapsed
+    const groupsA3 = await browserA.testBridge.getGroupCount();
+    const alphaA3 = groupsA3.groupDetails.find(g => g.title === 'Alpha');
+    const betaA3 = groupsA3.groupDetails.find(g => g.title === 'Beta');
+
+    console.log(`  A after merge - Alpha collapsed: ${alphaA3 && alphaA3.collapsed}, Beta collapsed: ${betaA3 && betaA3.collapsed}`);
+
+    await Assert.isTrue(!!alphaA3, 'A should still have Alpha group');
+    await Assert.isTrue(!!betaA3, 'A should still have Beta group');
+    await Assert.isTrue(alphaA3.collapsed, 'Alpha should still be collapsed on A after atomic merge');
+    await Assert.isTrue(betaA3.collapsed, 'Beta should still be collapsed on A after atomic merge');
+
+    results.pass('Collapsed Survives Atomic Merge');
+  } finally {
+    console.log('  Cleaning up...');
+    await cleanupBrowser(browserA);
+    await cleanupBrowser(browserB);
+  }
+}
+
 async function main() {
   console.log('='.repeat(60));
   console.log('INITIAL GROUP SYNC TESTS');
@@ -316,6 +400,7 @@ async function main() {
     testInitialSyncNoGroupDuplication,
     testInitialSyncMultipleGroups,
     testCollapsedGroupStaysCollapsed,
+    testCollapsedGroupSurvivesAtomicMerge,
   ];
 
   for (const test of tests) {
