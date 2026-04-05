@@ -286,15 +286,26 @@ async function testAddTabToGroupPreservesOrder() {
     const groupResultA = await browserA.testBridge.getGroupCount();
     const groupA = groupResultA.groupDetails.find(g => g.title === 'AddOrder');
     await browserA.testBridge.groupTabs([t4.id], 'AddOrder', 'red', groupA.id);
-    await sleep(300);
+
+    // Wait for the tab to appear in the group before attempting the move.
+    // On slow CI, groupId may not update immediately after groupTabs.
+    let url4Tab, secondPosition;
+    const groupDeadline = Date.now() + 5000;
+    while (Date.now() < groupDeadline) {
+      await sleep(300);
+      const tabsAfterGroup = await browserA.testBridge.getTabs();
+      const groupTabsAfterGroup = tabsAfterGroup
+        .filter(t => t.groupId === groupA.id)
+        .sort((a, b) => a.index - b.index);
+      url4Tab = groupTabsAfterGroup.find(t => t.url === url4);
+      if (url4Tab && groupTabsAfterGroup.length === 4) {
+        secondPosition = groupTabsAfterGroup[1].index;
+        break;
+      }
+    }
+    await Assert.isTrue(!!url4Tab, 'New tab should be in group before move');
 
     // Move it from end of group to the second position
-    const tabsAfterGroup = await browserA.testBridge.getTabs();
-    const groupTabsAfterGroup = tabsAfterGroup
-      .filter(t => t.groupId === groupA.id)
-      .sort((a, b) => a.index - b.index);
-    const url4Tab = groupTabsAfterGroup.find(t => t.url === url4);
-    const secondPosition = groupTabsAfterGroup[1].index;
     await browserA.testBridge.moveTab(url4Tab.id, secondPosition);
     await sleep(500);
 
