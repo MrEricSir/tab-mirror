@@ -134,11 +134,12 @@ let disconnectNotifyDelayMs = 30000;
 let recentlySyncedUrls = new Map();  // syncId -> { url, at }
 let redirectSuppressionMs = 10000;    // 10s default
 
-// Bounce detection
-// Skip syncing URLs that were recently sent to the same tab.
-let syncUrlHistory = new Map();  // syncId -> { urls: string[], lastUpdated: number }
-const BOUNCE_DETECTION_WINDOW_MS = 30000;
-const BOUNCE_MAX_HISTORY = 5;
+// Pre-sync URL revert suppression
+// Before sync applies a new URL to a local tab, records the tab's current URL.
+// If the tab later reverts to that pre-sync URL (redirect artifact), the
+// broadcast is suppressed so the revert doesn't propagate back to the originator.
+let preSyncUrls = new Map();  // syncId -> { preSyncUrl, appliedUrl, at }
+const PRE_SYNC_REVERT_WINDOW_MS = 30000;
 
 // Tab/Group sync ID mappings (bidirectional)
 let tabSyncIds = new BiMap();    // tabId <-> syncId

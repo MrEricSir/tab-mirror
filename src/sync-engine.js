@@ -92,16 +92,6 @@ function matchTabsToMappings(liveTabs, persistedMappings) {
     return { matched, unmatched };
 }
 
-// Should a URL update be suppressed to prevent bounce loops?
-function shouldSuppressBounce(history, now, newUrl, bounceWindowMs) {
-    if (!history) {
-        return false;
-    } else if ((now - history.lastUpdated) >= bounceWindowMs) {
-        return false;
-    }
-    return history.urls.includes(newUrl);
-}
-
 // Capture Local State
 // Grabs all syncable tabs and groups from the sync window. Each tab and group
 // gets a stable sync ID if it doesn't have one yet. The result is the payload
@@ -188,6 +178,17 @@ async function captureLocalState() {
             if (name) {
                 tabInfo.containerName = name;
             }
+        }
+        // Pre-sync URL revert suppression: if this tab's current URL matches the
+        // pre-sync URL (redirect artifact), override with what sync intended so
+        // the revert doesn't propagate via captureLocalState broadcasts.
+        const pre = preSyncUrls.get(sId);
+        if (pre && (Date.now() - pre.at) < PRE_SYNC_REVERT_WINDOW_MS) {
+            if (normalizeUrl(t.url) === pre.preSyncUrl) {
+                tabInfo.url = pre.appliedUrl;
+            }
+        } else if (pre) {
+            preSyncUrls.delete(sId);
         }
         return tabInfo;
     });
@@ -728,28 +729,23 @@ async function syncAddedAndUpdatedTabs(remoteTabs, prevState, diff) {
             }
         }
 
-        // Bounce detection: Skip recently seen URLs for this tab.
-        if (updates.url) {
-            if (shouldSuppressBounce(syncUrlHistory.get(sId), Date.now(), updates.url, BOUNCE_DETECTION_WINDOW_MS)) {
-                console.log(`[SYNC] Bounce detected for ${sId}, skipping URL ${updates.url}`);
-                fileLog(`Bounce detected for ${sId}, skipping URL ${updates.url}`, 'SYNC');
-                delete updates.url;
-            }
-        }
-
         if (Object.keys(updates).length > 0) {
             try {
+                // Record the local tab's current URL before sync changes it,
+                // so we can suppress redirect-induced reverts back to this URL.
+                if (updates.url) {
+                    const localTab = localTabs.find(t => t.id === localTabId);
+                    if (localTab) {
+                        preSyncUrls.set(sId, {
+                            preSyncUrl: normalizeUrl(localTab.url),
+                            appliedUrl: updates.url,
+                            at: Date.now()
+                        });
+                    }
+                }
                 await browser.tabs.update(localTabId, updates);
-                // Saves URLs for redirect/bounce prevention.
                 if (updates.url) {
                     recentlySyncedUrls.set(sId, { url: updates.url, at: Date.now() });
-                    const history = syncUrlHistory.get(sId) || { urls: [], lastUpdated: 0 };
-                    history.urls.push(updates.url);
-                    if (history.urls.length > BOUNCE_MAX_HISTORY) {
-                        history.urls.shift();
-                    }
-                    history.lastUpdated = Date.now();
-                    syncUrlHistory.set(sId, history);
                 }
                 fileLog(`Updated tab: ${JSON.stringify(updates)} (${sId})`, 'SYNC');
                 updated++;
@@ -1341,5 +1337,5 @@ async function applyTombstones() {
 }
 
 if (typeof module !== 'undefined') {
-    module.exports = { computeAtomicMerge, computeRemoteDiff, findMatchingLocalTab, buildTabGroupingMap, shouldSuppressBounce, matchTabsToMappings };
+    module.exports = { computeAtomicMerge, computeRemoteDiff, findMatchingLocalTab, buildTabGroupingMap, matchTabsToMappings };
 }

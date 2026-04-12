@@ -509,7 +509,7 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 tabSyncIds.clear();
                 clearGroupState();
                 recentlySyncedUrls.clear();
-                syncUrlHistory.clear();
+                preSyncUrls.clear();
                 pendingSyncQueue = [];
                 syncHistory = [];
                 notifiedPeers.clear();

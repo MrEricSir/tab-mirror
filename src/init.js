@@ -38,10 +38,11 @@ browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     }
     // Redirect suppression: if sync recently applied a URL to this tab,
     // suppress the outgoing broadcast so the redirect doesn't "bounce" back.
-    // Removed after a brief suppression window has elapsesd.
+    // Removed after a brief suppression window has elapsed.
     if (changeInfo.url) {
         const sId = tabSyncIds.getByA(tabId);
         if (sId) {
+            // Suppress ALL URL changes for a short window after sync apply
             const recent = recentlySyncedUrls.get(sId);
             if (recent) {
                 if ((Date.now() - recent.at) < redirectSuppressionMs) {
@@ -51,6 +52,21 @@ browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                 }
                 // Expired, clean up
                 recentlySyncedUrls.delete(sId);
+            }
+
+            // Suppress revert-to-preSyncUrl for a longer window after sync apply.
+            // This catches redirect artifacts (e.g. YouTube SPA bouncing back to
+            // homepage) without blocking legitimate navigation to new URLs.
+            const pre = preSyncUrls.get(sId);
+            if (pre && (Date.now() - pre.at) < PRE_SYNC_REVERT_WINDOW_MS) {
+                const normalized = normalizeUrl(changeInfo.url);
+                if (normalized === pre.preSyncUrl) {
+                    console.log(`[TAB] Suppressing revert to pre-sync URL for ${sId}`);
+                    fileLog(`Suppressing revert to pre-sync URL for ${sId}`, 'SYNC');
+                    return;
+                }
+            } else if (pre) {
+                preSyncUrls.delete(sId);
             }
         }
     }

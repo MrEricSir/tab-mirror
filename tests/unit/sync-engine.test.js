@@ -18,7 +18,7 @@ const bg = require('../../src/background.js');
 globalThis.isPrivilegedUrl = bg.isPrivilegedUrl;
 globalThis.normalizeUrl = bg.normalizeUrl;
 
-const { computeAtomicMerge, computeRemoteDiff, findMatchingLocalTab, buildTabGroupingMap, shouldSuppressBounce, matchTabsToMappings } = require('../../src/sync-engine.js');
+const { computeAtomicMerge, computeRemoteDiff, findMatchingLocalTab, buildTabGroupingMap, matchTabsToMappings } = require('../../src/sync-engine.js');
 
 // --- computeAtomicMerge ---
 
@@ -361,41 +361,6 @@ describe('buildTabGroupingMap', () => {
         const syncMap = new Map(); // no mapping for s_unknown
         const result = buildTabGroupingMap(tabs, groups, syncMap);
         assert.deepEqual(result, { g1: [] });
-    });
-});
-
-// --- shouldSuppressBounce ---
-
-describe('shouldSuppressBounce', () => {
-    test('null history → false', () => {
-        assert.equal(shouldSuppressBounce(null, Date.now(), 'https://a.com', 30000), false);
-    });
-
-    test('undefined history → false', () => {
-        assert.equal(shouldSuppressBounce(undefined, Date.now(), 'https://a.com', 30000), false);
-    });
-
-    test('expired window → false', () => {
-        const history = { urls: ['https://a.com'], lastUpdated: 1000 };
-        assert.equal(shouldSuppressBounce(history, 50000, 'https://a.com', 30000), false);
-    });
-
-    test('URL in history within window → true', () => {
-        const now = Date.now();
-        const history = { urls: ['https://a.com', 'https://b.com'], lastUpdated: now - 1000 };
-        assert.equal(shouldSuppressBounce(history, now, 'https://a.com', 30000), true);
-    });
-
-    test('URL not in history within window → false', () => {
-        const now = Date.now();
-        const history = { urls: ['https://a.com'], lastUpdated: now - 1000 };
-        assert.equal(shouldSuppressBounce(history, now, 'https://other.com', 30000), false);
-    });
-
-    test('exact boundary: now - lastUpdated == bounceWindowMs → false (expired)', () => {
-        const history = { urls: ['https://a.com'], lastUpdated: 1000 };
-        // now - lastUpdated = 30000, which is NOT < 30000, so expired
-        assert.equal(shouldSuppressBounce(history, 31000, 'https://a.com', 30000), false);
     });
 });
 

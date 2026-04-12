@@ -198,6 +198,153 @@ async function testSimultaneousSendNoEcho(browserA, browserB, browserC) {
   results.pass('Simultaneous Send-to-Device No Echo');
 }
 
+/**
+ * Redirect bounce: A navigates from URL1 to URL2, B mirrors URL2,
+ * then B's mirror tab "redirects" back to URL1 (YouTube-style).
+ * A should NOT revert to URL1 - bounce detection should catch it.
+ */
+async function testRedirectBounceDoesNotRevertOriginator(browserA, browserB) {
+  console.log();
+  console.log('Test: Redirect Bounce Does Not Revert Originator');
+
+  const url1 = generateTestUrl('bounce-origin');
+  const url2 = generateTestUrl('bounce-target');
+
+  // Create tab on A at URL1
+  console.log(`  Creating tab on A at URL1`);
+  const tab = await browserA.testBridge.createTab(url1);
+  await browserA.testBridge.waitForTabLoad(tab.id);
+
+  // Wait for sync to B
+  await browserA.testBridge.waitForSyncComplete(10000);
+  const mirrorResult = await browserB.testBridge.waitForTabUrl('bounce-origin', 20000);
+  await Assert.isTrue(!!mirrorResult, 'B should mirror the tab');
+  await browserB.testBridge.waitForSyncComplete(10000);
+
+  // Let initial echo settle
+  await browserA.testBridge.triggerSync();
+  await browserB.testBridge.triggerSync();
+  await sleep(2000);
+  await browserA.testBridge.waitForSyncComplete(10000);
+
+  // Navigate A to URL2 (user clicks a link)
+  console.log('  Navigating A to URL2 (simulating user click)');
+  await browserA.testBridge.updateTab(tab.id, { url: url2 });
+  await browserA.testBridge.waitForTabLoad(tab.id);
+
+  // Wait for URL2 to propagate to B and echo to settle
+  await browserA.testBridge.waitForSyncComplete(10000);
+  const mirrorUpdate = await browserB.testBridge.waitForTabUrl('bounce-target', 20000);
+  await Assert.isTrue(!!mirrorUpdate, 'B should mirror URL2');
+  await browserB.testBridge.waitForSyncComplete(10000);
+  await browserA.testBridge.waitForSyncComplete(10000);
+  await browserA.testBridge.triggerSync();
+  await browserB.testBridge.triggerSync();
+  await sleep(2000);
+  await browserA.testBridge.waitForSyncComplete(10000);
+
+  // Find B's mirror tab
+  const tabsB = await browserB.testBridge.getTabs();
+  const mirrorTab = tabsB.find(t => t.url && t.url.includes('bounce-target'));
+  await Assert.isTrue(!!mirrorTab, 'B should have mirror tab at URL2');
+  console.log(`  B mirror tab id: ${mirrorTab.id}`);
+
+  // Simulate redirect: navigate B's mirror back to URL1.
+  // Disable redirect suppression so the broadcast goes through immediately.
+  await browserB.testBridge.setRedirectSuppressionWindow(0);
+  console.log('  Simulating redirect on B: navigating mirror back to URL1');
+  await browserB.testBridge.updateTab(mirrorTab.id, { url: url1 });
+  await sleep(1000);
+
+  // Force sync from B to A and let it settle
+  await browserB.testBridge.triggerSync();
+  await sleep(2000);
+  for (let i = 0; i < 3; i++) {
+    await browserA.testBridge.triggerSync();
+    await browserB.testBridge.triggerSync();
+    await sleep(1000);
+  }
+  await browserA.testBridge.waitForSyncComplete(10000);
+
+  // A should still have URL2, NOT URL1
+  const tabsA = await browserA.testBridge.getTabs();
+  const aTab = tabsA.find(t => t.url && t.url.includes('bounce-'));
+  console.log(`  A's tab URL after bounce: ${aTab ? aTab.url : 'NOT FOUND'}`);
+  await Assert.isTrue(
+    aTab && aTab.url.includes('bounce-target'),
+    'A should still have URL2 (bounce detection prevents revert to URL1)'
+  );
+
+  // Reset redirect suppression
+  await browserB.testBridge.setRedirectSuppressionWindow(10000);
+
+  results.pass('Redirect Bounce Does Not Revert Originator');
+}
+
+/**
+ * Legitimate URL change from peer should NOT be suppressed.
+ * A navigates URL1 -> URL2, B mirrors, then B navigates to URL3.
+ * A should receive URL3 since it's a new destination, not a bounce.
+ */
+async function testLegitimateUrlChangeNotSuppressed(browserA, browserB) {
+  console.log();
+  console.log('Test: Legitimate URL Change Not Suppressed');
+
+  const url1 = generateTestUrl('legit-initial');
+  const url2 = generateTestUrl('legit-navigate');
+  const url3 = generateTestUrl('legit-new-destination');
+
+  // A creates tab at URL1
+  console.log('  Creating tab on A at URL1');
+  const tab = await browserA.testBridge.createTab(url1);
+  await browserA.testBridge.waitForTabLoad(tab.id);
+
+  // Sync to B
+  await browserA.testBridge.waitForSyncComplete(10000);
+  await browserB.testBridge.waitForTabUrl('legit-initial', 20000);
+  await browserB.testBridge.waitForSyncComplete(10000);
+  await sleep(2000);
+
+  // A navigates to URL2
+  console.log('  Navigating A to URL2');
+  await browserA.testBridge.updateTab(tab.id, { url: url2 });
+  await browserA.testBridge.waitForTabLoad(tab.id);
+
+  // Sync to B
+  await browserA.testBridge.waitForSyncComplete(10000);
+  await browserB.testBridge.waitForTabUrl('legit-navigate', 20000);
+  await browserB.testBridge.waitForSyncComplete(10000);
+  await browserA.testBridge.triggerSync();
+  await browserB.testBridge.triggerSync();
+  await sleep(2000);
+  await browserA.testBridge.waitForSyncComplete(10000);
+
+  // Navigate B's mirror to URL3 (legitimate new destination, not a bounce)
+  const tabsB = await browserB.testBridge.getTabs();
+  const mirrorTab = tabsB.find(t => t.url && t.url.includes('legit-navigate'));
+  await Assert.isTrue(!!mirrorTab, 'B should have mirror at URL2');
+
+  await browserB.testBridge.setRedirectSuppressionWindow(0);
+  console.log('  Navigating B mirror to URL3 (legitimate new destination)');
+  await browserB.testBridge.updateTab(mirrorTab.id, { url: url3 });
+  await sleep(1000);
+
+  // Force sync from B to A
+  await browserB.testBridge.triggerSync();
+  await sleep(2000);
+  await browserA.testBridge.waitForSyncComplete(10000);
+
+  // A should receive URL3 (not a bounce - genuinely new URL)
+  const aTab = await browserA.testBridge.waitForTabUrl('legit-new-destination', 20000);
+  console.log(`  A received URL3: ${aTab ? aTab.url : 'NOT FOUND'}`);
+  await Assert.isTrue(!!aTab, 'A should receive URL3 (legitimate update goes through)');
+
+  // Reset redirect suppression
+  await browserB.testBridge.setRedirectSuppressionWindow(10000);
+
+  results.pass('Legitimate URL Change Not Suppressed');
+}
+
 async function main() {
   console.log('='.repeat(60));
   console.log('SYNC ECHO / LOOP PREVENTION TESTS');
@@ -219,10 +366,18 @@ async function main() {
     await browserA.testBridge.waitForSyncComplete(10000);
     await browserB.testBridge.waitForSyncComplete(10000);
 
-    try {
-      await testTwoInstanceNoEcho(browserA, browserB);
-    } catch (error) {
-      results.error('testTwoInstanceNoEcho', error);
+    const twoInstanceTests = [
+      testTwoInstanceNoEcho,
+      testRedirectBounceDoesNotRevertOriginator,
+      testLegitimateUrlChangeNotSuppressed,
+    ];
+
+    for (const test of twoInstanceTests) {
+      try {
+        await test(browserA, browserB);
+      } catch (error) {
+        results.error(test.name || 'Unknown Test', error);
+      }
     }
   } catch (error) {
     results.error('Two-Instance Setup', error);
