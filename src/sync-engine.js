@@ -182,13 +182,9 @@ async function captureLocalState() {
         // Pre-sync URL revert suppression: if this tab's current URL matches the
         // pre-sync URL (redirect artifact), override with what sync intended so
         // the revert doesn't propagate via captureLocalState broadcasts.
-        const pre = preSyncUrls.get(sId);
-        if (pre && (Date.now() - pre.at) < PRE_SYNC_REVERT_WINDOW_MS) {
-            if (normalizeUrl(t.url) === pre.preSyncUrl) {
-                tabInfo.url = pre.appliedUrl;
-            }
-        } else if (pre) {
-            preSyncUrls.delete(sId);
+        const overrideUrl = urlSuppression.getCaptureOverride(sId, t.url);
+        if (overrideUrl) {
+            tabInfo.url = overrideUrl;
         }
         return tabInfo;
     });
@@ -210,7 +206,7 @@ async function broadcastState() {
     if (syncWindowId === null) {
         return;
     }
-    if (outgoingMuted || syncPaused) {
+    if (connectionState.outgoingMuted || syncPaused) {
         return;
     }
     broadcastStats.attempted++;
@@ -236,10 +232,10 @@ async function broadcastState() {
             state.syncWindowChanged = true;
             syncWindowChanged = false;
         }
-        console.log(`[BROADCAST] ${state.tabs.length} tabs to ${connections.size} peer(s)${state.syncWindowChanged ? ' (window changed)' : ''}`);
+        console.log(`[BROADCAST] ${state.tabs.length} tabs to ${connectionState.connections.size} peer(s)${state.syncWindowChanged ? ' (window changed)' : ''}`);
         fileLog(`Broadcasting ${state.tabs.length} tabs${state.syncWindowChanged ? ' (window changed)' : ''}`, 'BROADCAST');
 
-        for (const [peerId, conn] of connections) {
+        for (const [peerId, conn] of connectionState.connections) {
             if (conn.open) {
                 try {
                     let payload = state;
@@ -257,7 +253,7 @@ async function broadcastState() {
                 } catch (e) {
                     console.warn(`[BROADCAST] Failed to send to ${peerId}, closing dead connection:`, e.message);
                     conn.close();
-                    cleanupPeerConnection(peerId);
+                    connectionState.cleanup(peerId);
                 }
             }
         }
@@ -697,7 +693,7 @@ async function syncAddedAndUpdatedTabs(remoteTabs, prevState, diff) {
                 }
                 tabSyncIds.set(newTab.id, rTab.sId);
                 // Record for redirect suppression
-                recentlySyncedUrls.set(rTab.sId, { url: rTab.url, at: Date.now() });
+                urlSuppression.recordSyncedUrl(rTab.sId, rTab.url);
                 fileLog(`Created tab: ${rTab.url} (${rTab.sId})`, 'SYNC');
                 added++;
             } catch (e) {
@@ -716,8 +712,8 @@ async function syncAddedAndUpdatedTabs(remoteTabs, prevState, diff) {
 
         // Only update URL if the local tab doesn't already have it.
         // Without this check, when B echoes A's URL back, A would
-        // redundantly record a recentlySyncedUrls entry that suppresses
-        // subsequent user navigation on A.
+        // redundantly record a suppression entry that blocks subsequent
+        // user navigation on A.
         if (updates.url) {
             if (updates.url === 'about:blank') {
                 delete updates.url;
@@ -736,16 +732,12 @@ async function syncAddedAndUpdatedTabs(remoteTabs, prevState, diff) {
                 if (updates.url) {
                     const localTab = localTabs.find(t => t.id === localTabId);
                     if (localTab) {
-                        preSyncUrls.set(sId, {
-                            preSyncUrl: normalizeUrl(localTab.url),
-                            appliedUrl: updates.url,
-                            at: Date.now()
-                        });
+                        urlSuppression.recordPreSyncUrl(sId, normalizeUrl(localTab.url), updates.url);
                     }
                 }
                 await browser.tabs.update(localTabId, updates);
                 if (updates.url) {
-                    recentlySyncedUrls.set(sId, { url: updates.url, at: Date.now() });
+                    urlSuppression.recordSyncedUrl(sId, updates.url);
                 }
                 fileLog(`Updated tab: ${JSON.stringify(updates)} (${sId})`, 'SYNC');
                 updated++;

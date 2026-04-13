@@ -48,7 +48,7 @@ async function removePairedDevice(peerId) {
     pairedDevices = pairedDevices.filter(d => d.peerId !== peerId);
     await savePairedDevices();
     // Close existing connection
-    const conn = connections.get(peerId);
+    const conn = connectionState.connections.get(peerId);
     if (conn) {
         try {
             conn.close();
@@ -56,7 +56,7 @@ async function removePairedDevice(peerId) {
             // conn might already be closed
         }
     }
-    cleanupPeerConnection(peerId);
+    connectionState.cleanup(peerId);
     syncedPeers.delete(peerId);
     lastKnownRemoteState.delete(peerId);
     encryptionKeyCache.delete(peerId);
@@ -270,19 +270,16 @@ function cancelPairing() {
 // Skipped in test mode unless forceAuthNextConnection is set.
 
 function showPeerConnectedNotification(peerId) {
-    if (notifiedPeers.has(peerId)) {
+    if (notificationState.hasNotified(peerId)) {
         return;
     }
     const device = pairedDevices.find(d => d.peerId === peerId);
     if (!device) {
         return;
     }
-    notifiedPeers.add(peerId);
+    notificationState.markNotified(peerId);
     const message = `Connected to ${device.name || peerId}`;
-    notificationLog.push({ time: Date.now(), peerId, message });
-    if (notificationLog.length > MAX_NOTIFICATION_LOG) {
-        notificationLog.shift();
-    }
+    notificationState.addLog({ time: Date.now(), peerId, message });
     browser.notifications.create(`peer-connected-${peerId}`, {
         type: 'basic',
         title: 'Tab Mirror',
@@ -296,12 +293,9 @@ function showPeerDisconnectedNotification(peerId) {
         return;
     }
     const message = `Disconnected from ${device.name || peerId}`;
-    notificationLog.push({ time: Date.now(), peerId, message });
-    if (notificationLog.length > MAX_NOTIFICATION_LOG) {
-        notificationLog.shift();
-    }
+    notificationState.addLog({ time: Date.now(), peerId, message });
     // Remove from notifiedPeers so reconnection triggers new connect notification
-    notifiedPeers.delete(peerId);
+    notificationState.unmarkNotified(peerId);
     browser.notifications.create(`peer-disconnected-${peerId}`, {
         type: 'basic',
         title: 'Tab Mirror',
@@ -310,34 +304,26 @@ function showPeerDisconnectedNotification(peerId) {
 }
 
 function scheduleDisconnectNotification(peerId) {
-    cancelDisconnectNotification(peerId);
-    const timerId = setTimeout(() => {
-        pendingDisconnectTimers.delete(peerId);
+    notificationState.scheduleDisconnect(peerId, () => {
         showPeerDisconnectedNotification(peerId);
-    }, disconnectNotifyDelayMs);
-    pendingDisconnectTimers.set(peerId, timerId);
+    });
 }
 
 function cancelDisconnectNotification(peerId) {
-    const timerId = pendingDisconnectTimers.get(peerId);
-    if (timerId != null) {
-        clearTimeout(timerId);
-        pendingDisconnectTimers.delete(peerId);
-    }
+    notificationState.cancelDisconnect(peerId);
 }
 
 function acceptConnection(conn) {
     console.log(`[P2P] Accepted connection: ${conn.peer}`);
     fileLog(`Accepted connection: ${conn.peer}`, 'P2P');
-    connections.set(conn.peer, conn);
-    pendingDials.delete(conn.peer);
-    connectionRetries.delete(conn.peer);
-    knownPeers = Array.from(connections.keys());
+    connectionState.connections.set(conn.peer, conn);
+    connectionState.pendingDials.delete(conn.peer);
+    connectionState.retries.delete(conn.peer);
     authenticatedPeers.add(conn.peer);
-    lastMessageTime.set(conn.peer, Date.now());
+    connectionState.lastMessageTime.set(conn.peer, Date.now());
 
     conn.on('data', async (data) => {
-        lastMessageTime.set(conn.peer, Date.now());
+        connectionState.lastMessageTime.set(conn.peer, Date.now());
         if (data && data.type === 'MIRROR_SYNC_ENCRYPTED') {
             const encKey = await getOrDeriveEncryptionKey(conn.peer);
             let decrypted = null;
@@ -385,7 +371,7 @@ function acceptConnection(conn) {
                 fileLog(`Rejected unencrypted sync from ${conn.peer}`, 'SECURITY');
             }
         } else if (data && data.type === 'MIRROR_PING') {
-            if (!outgoingMuted) {
+            if (!connectionState.outgoingMuted) {
                 try {
                     conn.send({ type: 'MIRROR_PONG' });
                 } catch (e) {
@@ -397,26 +383,26 @@ function acceptConnection(conn) {
     });
 
     conn.on('close', () => {
-        if (connections.get(conn.peer) !== conn) {
+        if (connectionState.connections.get(conn.peer) !== conn) {
             console.log(`[P2P] Stale connection closed (replaced): ${conn.peer}`);
             return;
         }
         console.log(`[P2P] Connection closed: ${conn.peer}`);
         fileLog(`Connection closed: ${conn.peer}`, 'P2P');
-        cleanupPeerConnection(conn.peer);
+        connectionState.cleanup(conn.peer);
         scheduleDisconnectNotification(conn.peer);
     });
 
     conn.on('error', (err) => {
-        if (connections.get(conn.peer) !== conn) {
+        if (connectionState.connections.get(conn.peer) !== conn) {
             return; // Stale connection error, ignore
         }
         console.warn(`[P2P] Connection error with ${conn.peer}:`, err.type || err.message || err);
-        cleanupPeerConnection(conn.peer);
-        const retry = connectionRetries.get(conn.peer) || { attempts: 0, lastAttempt: 0 };
+        connectionState.cleanup(conn.peer);
+        const retry = connectionState.retries.get(conn.peer) || { attempts: 0, lastAttempt: 0 };
         retry.attempts++;
         retry.lastAttempt = Date.now();
-        connectionRetries.set(conn.peer, retry);
+        connectionState.retries.set(conn.peer, retry);
     });
 
     cancelDisconnectNotification(conn.peer);
@@ -452,7 +438,7 @@ async function rotateKeyForPeer(peerId) {
         return { success: false, error: 'Rotation already in progress' };
     }
 
-    const conn = connections.get(peerId);
+    const conn = connectionState.connections.get(peerId);
     if (!conn) {
         return { success: false, error: 'Not connected to peer' };
     }
@@ -594,7 +580,7 @@ async function checkAutoKeyRotation() {
     }
     const now = Date.now();
     for (const device of pairedDevices) {
-        if (!connections.has(device.peerId)) {
+        if (!connectionState.connections.has(device.peerId)) {
             continue;
         }
         if (pendingKeyRotation.has(device.peerId)) {

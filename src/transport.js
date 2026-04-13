@@ -37,10 +37,8 @@ function setupPeerJS() {
         fileLog(`Registered with PeerJS server as ${id}`, 'P2P');
 
         discoverPeers();
-        if (discoverInterval) {
-            clearInterval(discoverInterval);
-        }
-        discoverInterval = setInterval(discoverPeers, DISCOVER_INTERVAL_MS);
+        connectionState.stopDiscovery();
+        connectionState._discoverInterval = setInterval(discoverPeers, DISCOVER_INTERVAL_MS);
     });
 
     window.peer.on('connection', (conn) => {
@@ -54,7 +52,7 @@ function setupPeerJS() {
         if (err.type === 'peer-unavailable') {
             const peerId = err.message?.match(/test-mirror-[a-f0-9]+|mirror-[a-f0-9]+|pair-\d{6}/)?.[0];
             if (peerId) {
-                pendingDials.delete(peerId);
+                connectionState.pendingDials.delete(peerId);
                 fileLog(`Peer ${peerId} not available yet`, 'P2P');
             }
             return;
@@ -62,7 +60,7 @@ function setupPeerJS() {
 
         console.warn(`[P2P] Error: ${err.type} - ${err.message}`);
         fileLog(`Peer error: ${err.type} - ${err.message}`, 'P2P-ERROR');
-        pendingDials.clear();
+        connectionState.pendingDials.clear();
 
         // Try to reconnect on network errors
         if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error') {
@@ -127,13 +125,13 @@ function handleConnection(conn) {
     // Handle errors before open (e.g. connection refused)
     conn.on('error', (err) => {
         console.warn(`[P2P] Connection error with ${conn.peer}:`, err.type || err.message || err);
-        if (connections.get(conn.peer) === conn) {
-            cleanupPeerConnection(conn.peer);
+        if (connectionState.connections.get(conn.peer) === conn) {
+            connectionState.cleanup(conn.peer);
         }
-        const retry = connectionRetries.get(conn.peer) || { attempts: 0, lastAttempt: 0 };
+        const retry = connectionState.retries.get(conn.peer) || { attempts: 0, lastAttempt: 0 };
         retry.attempts++;
         retry.lastAttempt = Date.now();
-        connectionRetries.set(conn.peer, retry);
+        connectionState.retries.set(conn.peer, retry);
     });
 }
 
@@ -141,12 +139,12 @@ function dialPeer(remoteId) {
     if (!window.peer || window.peer.disconnected || window.peer.destroyed) {
         return;
     }
-    if (connections.has(remoteId) || pendingDials.has(remoteId)) {
+    if (connectionState.connections.has(remoteId) || connectionState.pendingDials.has(remoteId)) {
         return;
     }
 
     // Exponential backoff
-    const retry = connectionRetries.get(remoteId);
+    const retry = connectionState.retries.get(remoteId);
     if (retry) {
         const backoff = computeRetryBackoff(retry.attempts, MIN_RETRY_BACKOFF_MS, MAX_RETRY_BACKOFF_MS);
         if (Date.now() - retry.lastAttempt < backoff) {
@@ -156,9 +154,9 @@ function dialPeer(remoteId) {
 
     console.log(`[P2P] Dialing: ${remoteId}`);
     fileLog(`Dialing ${remoteId}`, 'P2P');
-    pendingDials.add(remoteId);
+    connectionState.pendingDials.add(remoteId);
     // Clear pending after 10s to allow retry
-    setTimeout(() => pendingDials.delete(remoteId), AUTH_TIMEOUT_MS);
+    setTimeout(() => connectionState.pendingDials.delete(remoteId), AUTH_TIMEOUT_MS);
 
     const conn = window.peer.connect(remoteId);
     handleConnection(conn);
@@ -181,7 +179,7 @@ async function discoverPeers() {
                 if (!peerId.startsWith('test-mirror-')) {
                     continue; // Only dial tab-mirror peers
                 }
-                if (shouldDialPeer(peerId, myDeviceId, connections, pendingDials)) {
+                if (shouldDialPeer(peerId, myDeviceId, connectionState.connections, connectionState.pendingDials)) {
                     dialPeer(peerId);
                 }
             }
@@ -191,7 +189,7 @@ async function discoverPeers() {
     } else {
         // Discover peers from paired devices list
         for (const device of pairedDevices) {
-            if (shouldDialPeer(device.peerId, myDeviceId, connections, pendingDials)) {
+            if (shouldDialPeer(device.peerId, myDeviceId, connectionState.connections, connectionState.pendingDials)) {
                 dialPeer(device.peerId);
             }
         }

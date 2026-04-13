@@ -38,35 +38,14 @@ browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     }
     // Redirect suppression: if sync recently applied a URL to this tab,
     // suppress the outgoing broadcast so the redirect doesn't "bounce" back.
-    // Removed after a brief suppression window has elapsed.
     if (changeInfo.url) {
         const sId = tabSyncIds.getByA(tabId);
         if (sId) {
-            // Suppress ALL URL changes for a short window after sync apply
-            const recent = recentlySyncedUrls.get(sId);
-            if (recent) {
-                if ((Date.now() - recent.at) < redirectSuppressionMs) {
-                    console.log(`[TAB] Suppressing redirect sync-back for ${sId} (url: ${changeInfo.url})`);
-                    fileLog(`Suppressing redirect sync-back for ${sId}`, 'SYNC');
-                    return;
-                }
-                // Expired, clean up
-                recentlySyncedUrls.delete(sId);
-            }
-
-            // Suppress revert-to-preSyncUrl for a longer window after sync apply.
-            // This catches redirect artifacts (e.g. YouTube SPA bouncing back to
-            // homepage) without blocking legitimate navigation to new URLs.
-            const pre = preSyncUrls.get(sId);
-            if (pre && (Date.now() - pre.at) < PRE_SYNC_REVERT_WINDOW_MS) {
-                const normalized = normalizeUrl(changeInfo.url);
-                if (normalized === pre.preSyncUrl) {
-                    console.log(`[TAB] Suppressing revert to pre-sync URL for ${sId}`);
-                    fileLog(`Suppressing revert to pre-sync URL for ${sId}`, 'SYNC');
-                    return;
-                }
-            } else if (pre) {
-                preSyncUrls.delete(sId);
+            const result = urlSuppression.shouldSuppressBroadcast(sId, changeInfo.url);
+            if (result.suppressed) {
+                console.log(`[TAB] Suppressing ${result.reason} for ${sId}`);
+                fileLog(`Suppressing ${result.reason} for ${sId}`, 'SYNC');
+                return;
             }
         }
     }
@@ -88,13 +67,9 @@ browser.webNavigation.onCommitted.addListener((details) => {
         details.transitionType === 'typed';
     if (isUserInitiated) {
         const sId = tabSyncIds.getByA(details.tabId);
-        if (sId) {
-            const pre = preSyncUrls.get(sId);
-            if (pre && normalizeUrl(details.url) === pre.preSyncUrl) {
-                console.log(`[NAV] User-initiated navigation to pre-sync URL for ${sId}, clearing suppression`);
-                fileLog(`User navigation cleared preSyncUrl suppression for ${sId}`, 'SYNC');
-                preSyncUrls.delete(sId);
-            }
+        if (sId && urlSuppression.clearForUserNav(sId, details.url)) {
+            console.log(`[NAV] User-initiated navigation cleared suppression for ${sId}`);
+            fileLog(`User navigation cleared suppression for ${sId}`, 'SYNC');
         }
     }
 });
@@ -278,20 +253,7 @@ function handleWake() {
     fileLog('Wake from sleep detected', 'WAKE');
 
     // Close all connections and destroy peer
-    connections.forEach((conn) => {
-        try {
-            conn.close();
-        } catch (e) {
-            // conn might already be closed
-        }
-    });
-    connections.clear();
-    pendingDials.clear();
-    connectionRetries.clear();
-    knownPeers = [];
-    if (discoverInterval) {
-        clearInterval(discoverInterval);
-    }
+    connectionState.reset();
 
     // Recreate peer after delay
     setTimeout(() => {
@@ -332,16 +294,16 @@ setInterval(() => {
 // Routinely scans for stale connections by pinging them, and cleans up any
 // that are discovered.
 function runHealthCheck() {
-    if (connections.size === 0) {
+    if (connectionState.connections.size === 0) {
         return;
     }
 
     const now = Date.now();
-    for (const [peerId, conn] of connections) {
+    for (const [peerId, conn] of connectionState.connections) {
         if (!conn.open) {
             console.log(`[HEALTH] Dead connection: ${peerId}`);
             fileLog(`Dead connection detected: ${peerId}`, 'HEALTH');
-            cleanupPeerConnection(peerId);
+            connectionState.cleanup(peerId);
             // Try reconnecting
             setTimeout(() => {
                 if (myDeviceId < peerId) {
@@ -349,8 +311,8 @@ function runHealthCheck() {
                 }
             }, RECONNECT_DELAY_MS);
         } else {
-            const lastTime = lastMessageTime.get(peerId) || 0;
-            if (isConnectionStale(lastTime, now, stalePeerTimeout)) {
+            const lastTime = connectionState.lastMessageTime.get(peerId) || 0;
+            if (isConnectionStale(lastTime, now, connectionState.stalePeerTimeout)) {
                 console.log(`[HEALTH] Stale peer detected: ${peerId} (${Math.round((now - lastTime) / 1000)}s since last message)`);
                 fileLog(`Stale peer detected: ${peerId} (${Math.round((now - lastTime) / 1000)}s silent)`, 'HEALTH');
                 try {
@@ -358,14 +320,14 @@ function runHealthCheck() {
                 } catch (e) {
                     // conn might already be closed
                 }
-                cleanupPeerConnection(peerId);
+                connectionState.cleanup(peerId);
                 // Try reconnecting
                 setTimeout(() => {
                     if (myDeviceId < peerId) {
                         dialPeer(peerId);
                     }
                 }, RECONNECT_DELAY_MS);
-            } else if (!outgoingMuted) {
+            } else if (!connectionState.outgoingMuted) {
                 try {
                     conn.send({ type: 'MIRROR_PING' });
                 } catch (e) {
@@ -383,14 +345,14 @@ setInterval(() => {
 // Cleanup on Unload/Suspend
 // Closes all peer connections gracefully before destroying the transport.
 function shutdownTransport() {
-    for (const [, conn] of connections) {
+    connectionState.connections.forEach((conn) => {
         try {
             conn.close();
         } catch (e) {
             // conn might already be closed
         }
-    }
-    connections.clear();
+    });
+    connectionState.connections.clear();
     if (window.peer) {
         try {
             window.peer.destroy();
@@ -520,7 +482,7 @@ window.addEventListener('unload', shutdownTransport);
     let initialDiscoveryAttempts = 0;
     const initialDiscovery = setInterval(() => {
         initialDiscoveryAttempts++;
-        if (initialDiscoveryAttempts >= MAX_INITIAL_DISCOVERY_ATTEMPTS || connections.size > 0) {
+        if (initialDiscoveryAttempts >= MAX_INITIAL_DISCOVERY_ATTEMPTS || connectionState.connections.size > 0) {
             clearInterval(initialDiscovery);
             return;
         }

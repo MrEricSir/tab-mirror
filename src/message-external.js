@@ -11,7 +11,7 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                     data: {
                         myDeviceId,
                         syncWindowId,
-                        connections: knownPeers,
+                        connections: connectionState.knownPeers,
                         syncedPeers: Array.from(syncedPeers),
                         syncCounter,
                         isProcessingRemote,
@@ -156,7 +156,7 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                         peerId: d.peerId,
                         name: d.name,
                         pairedAt: d.pairedAt,
-                        connected: connections.has(d.peerId)
+                        connected: connectionState.connections.has(d.peerId)
                     }))
                 };
             }
@@ -165,8 +165,8 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 return {
                     success: true,
                     data: {
-                        log: notificationLog,
-                        notifiedPeers: Array.from(notifiedPeers)
+                        log: notificationState.getLog(),
+                        notifiedPeers: notificationState.getNotifiedPeers()
                     }
                 };
             }
@@ -286,33 +286,30 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
             }
 
             case 'setStalePeerTimeout': {
-                stalePeerTimeout = message.timeout;
+                connectionState.stalePeerTimeout = message.timeout;
                 return { success: true, data: `Stale peer timeout set to ${message.timeout}ms` };
             }
 
             case 'setDisconnectNotifyDelay': {
-                disconnectNotifyDelayMs = message.delay;
+                notificationState.setDisconnectDelay(message.delay);
                 return { success: true, data: `Disconnect notify delay set to ${message.delay}ms` };
             }
 
             case 'pauseDiscovery': {
-                if (discoverInterval) {
-                    clearInterval(discoverInterval);
-                    discoverInterval = null;
-                }
+                connectionState.stopDiscovery();
                 return { success: true, data: 'Discovery paused' };
             }
 
             case 'resumeDiscovery': {
-                if (!discoverInterval) {
+                if (!connectionState._discoverInterval) {
                     discoverPeers();
-                    discoverInterval = setInterval(discoverPeers, DISCOVER_INTERVAL_MS);
+                    connectionState._discoverInterval = setInterval(discoverPeers, DISCOVER_INTERVAL_MS);
                 }
                 return { success: true, data: 'Discovery resumed' };
             }
 
             case 'setRedirectSuppressionWindow': {
-                redirectSuppressionMs = message.ms;
+                urlSuppression.setSuppressionWindow(message.ms);
                 return { success: true, data: `Redirect suppression window set to ${message.ms}ms` };
             }
 
@@ -430,8 +427,8 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
             }
 
             case 'muteOutgoing': {
-                outgoingMuted = message.muted;
-                return { success: true, data: `Outgoing muted: ${outgoingMuted}` };
+                connectionState.outgoingMuted = message.muted;
+                return { success: true, data: `Outgoing muted: ${connectionState.outgoingMuted}` };
             }
 
             case 'runHealthCheck': {
@@ -441,17 +438,17 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
 
             case 'getLastMessageTimes': {
                 const entries = {};
-                for (const [peerId, time] of lastMessageTime) {
+                for (const [peerId, time] of connectionState.lastMessageTime) {
                     entries[peerId] = time;
                 }
                 return { success: true, data: entries };
             }
 
             case 'disconnectPeer': {
-                const dc = connections.get(message.peerId);
+                const dc = connectionState.connections.get(message.peerId);
                 if (dc) {
                     dc.close();
-                    cleanupPeerConnection(message.peerId);
+                    connectionState.cleanup(message.peerId);
                     scheduleDisconnectNotification(message.peerId);
                 }
                 return { success: true, data: { disconnected: !!dc } };
@@ -502,33 +499,7 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                 // Test-only: simulates a restart by clearing in-memory state
                 // but keeping syncedPeers (persisted via storage.local).
                 // Reproduces the "Sync Now loses groups" scenario.
-                lastKnownRemoteState.clear();
-                connectionRetries.clear();
-                lastMessageTime.clear();
-                lastRemoteSyncTime.clear();
-                tabSyncIds.clear();
-                clearGroupState();
-                recentlySyncedUrls.clear();
-                preSyncUrls.clear();
-                pendingSyncQueue = [];
-                syncHistory = [];
-                notifiedPeers.clear();
-                notificationLog = [];
-                pendingDisconnectTimers.forEach(t => clearTimeout(t));
-                pendingDisconnectTimers.clear();
-                connections.forEach(conn => {
-                    try {
-                        conn.close();
-                    } catch (e) {
-                        // conn might already be closed
-                    }
-                });
-                connections.clear();
-                pendingDials.clear();
-                knownPeers = [];
-                if (discoverInterval) {
-                    clearInterval(discoverInterval);
-                }
+                resetAllState();
                 if (window.peer && !window.peer.destroyed) {
                     try {
                         window.peer.destroy();
@@ -536,9 +507,6 @@ browser.runtime.onMessageExternal.addListener(async (message, sender) => {
                         // peer might already be gone
                     }
                 }
-                // Clear disconnect timers again: may have triggered new accidentally?
-                pendingDisconnectTimers.forEach(t => clearTimeout(t));
-                pendingDisconnectTimers.clear();
                 // Restore persisted state and re-assign sync IDs (matches real boot)
                 await restoreSyncMappings();
                 await restoreRemoteStates();

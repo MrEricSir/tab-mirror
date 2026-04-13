@@ -11,7 +11,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
     if (message.action === 'getStatus') {
         return Promise.resolve({
             id: myDeviceId,
-            peers: knownPeers.length,
+            peers: connectionState.knownPeers.length,
             pairedCount: pairedDevices.length,
             online: !!(window.peer && !window.peer.disconnected),
             lastSyncTime: Math.max(0, ...lastRemoteSyncTime.values()),
@@ -28,9 +28,9 @@ browser.runtime.onMessage.addListener((message, sender) => {
             id: myDeviceId,
             syncWindowId,
             online: !!(window.peer && !window.peer.disconnected),
-            peers: knownPeers.length,
-            connectedPeers: knownPeers,
-            pendingDials: pendingDials.size,
+            peers: connectionState.knownPeers.length,
+            connectedPeers: connectionState.knownPeers,
+            pendingDials: connectionState.pendingDials.size,
             tabMappings: tabSyncIds.size,
             groupMappings: groupSyncIds.size,
             isProcessingRemote,
@@ -47,43 +47,11 @@ browser.runtime.onMessage.addListener((message, sender) => {
     }
 
     if (message.action === 'fullSystemRefresh') {
-        syncedPeers.clear();
-        knownPeers = [];
-        lastRemoteSyncTime.clear();
-        syncCounter = 0;
-        lastKnownRemoteState.clear();
-        connectionRetries.clear();
-        authenticatedPeers.clear();
-        encryptionKeyCache.clear();
-        previousKeyCache.clear();
-        pendingKeyRotation.clear();
-        keyRotationTimers.forEach(t => clearTimeout(t));
-        keyRotationTimers.clear();
-        pendingSyncQueue = [];
-        syncHistory = [];
-        notifiedPeers.clear();
-        notificationLog = [];
-        pendingDisconnectTimers.forEach(t => clearTimeout(t));
-        pendingDisconnectTimers.clear();
+        resetAllState({ includeAuth: true });
         cancelPairing();
-        tabSyncIds.clear();
-        offlineTombstones.clear();
         browser.storage.local.remove([
             'syncIdMappings', 'groupSyncIdMappings', 'lastBroadcastTabs', 'peerRemoteStates'
         ]).catch(() => {});
-        // Tear down PeerJS
-        connections.forEach((conn) => {
-            try {
-                conn.close();
-            } catch (e) {
-                // conn might already be closed
-            }
-        });
-        connections.clear();
-        pendingDials.clear();
-        if (discoverInterval) {
-            clearInterval(discoverInterval);
-        }
         if (window.peer) {
             try {
                 window.peer.destroy();
@@ -92,10 +60,6 @@ browser.runtime.onMessage.addListener((message, sender) => {
             }
             window.peer = null;
         }
-        // Clear disconnect timers again just to be extra safe.
-        pendingDisconnectTimers.forEach(t => clearTimeout(t));
-        pendingDisconnectTimers.clear();
-        // Re-setup
         setupTransport();
         return Promise.resolve({ success: true });
     }
@@ -200,7 +164,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
                 peerId: d.peerId,
                 name: d.name,
                 pairedAt: d.pairedAt,
-                connected: connections.has(d.peerId)
+                connected: connectionState.connections.has(d.peerId)
             }))
         });
     }

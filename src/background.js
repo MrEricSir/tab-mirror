@@ -73,14 +73,11 @@ let syncCounter = 0;
 let isProcessingRemote = false;
 let lastRemoteSyncTime = new Map(); // peerId -> timestamp
 let syncedPeers = new Set();
-let knownPeers = [];        // Pulled from connections Map for test compatibility
+// (knownPeers, stalePeerTimeout, lastMessageTime, outgoingMuted -> connectionState)
 let broadcastDebounce = null;
 let broadcastPending = false;
 let broadcastInFlight = false;
 let broadcastStats = { attempted: 0, completed: 0, deferred: 0 };
-let stalePeerTimeout = STALE_PEER_TIMEOUT_MS;
-let lastMessageTime = new Map();  // peerId -> timestamp of last received data
-let outgoingMuted = false;        // Test flag: blocks all outgoing data for stale simulation
 let pendingSyncQueue = [];        // Remote states queued up while we're busy processing
 let syncHistory = [];             // Last N sync events for debugging
 const MAX_SYNC_HISTORY = 50;
@@ -90,22 +87,58 @@ let syncWindowChanged = false;    // Flagged as true in adoptSyncWindow, we clea
 let startTime = Date.now();
 let syncWindowId = null;
 
-// PeerJS transport state
-let connections = new Map();  // peerId -> PeerJS DataConnection
-let pendingDials = new Set(); // Peer IDs currently being dialed
-let discoverInterval = null;
-let connectionRetries = new Map(); // peerId -> { attempts, lastAttempt } for backoff
-let localGroupChanges = new Map(); // gSyncId -> timestamp for group conflict resolution
+// Connection state
+const connectionState = {
+    connections: new Map(),     // peerId -> PeerJS DataConnection
+    pendingDials: new Set(),    // Peer IDs currently being dialed
+    retries: new Map(),         // peerId -> { attempts, lastAttempt }
+    lastMessageTime: new Map(), // peerId -> timestamp
+    outgoingMuted: false,       // Test flag: blocks all outgoing data
+    stalePeerTimeout: STALE_PEER_TIMEOUT_MS,
+    _discoverInterval: null,
 
-// Clears connection for a peer that's closed, timed out, or causing errors.
-function cleanupPeerConnection(peerId) {
-    connections.delete(peerId);
-    pendingDials.delete(peerId);
-    authenticatedPeers.delete(peerId);
-    lastMessageTime.delete(peerId);
-    lastRemoteSyncTime.delete(peerId);
-    knownPeers = Array.from(connections.keys());
-}
+    get knownPeers() {
+        return Array.from(this.connections.keys());
+    },
+
+    // Clears connection for a peer that's closed, timed out, or causing errors.
+    cleanup(peerId) {
+        this.connections.delete(peerId);
+        this.pendingDials.delete(peerId);
+        authenticatedPeers.delete(peerId);
+        this.lastMessageTime.delete(peerId);
+        lastRemoteSyncTime.delete(peerId);
+    },
+
+    // Closes all connections and clears transport state.
+    closeAll() {
+        this.connections.forEach((conn) => {
+            try {
+                conn.close();
+            } catch (e) {
+                // conn might already be closed
+            }
+        });
+        this.connections.clear();
+        this.pendingDials.clear();
+        this.retries.clear();
+    },
+
+    stopDiscovery() {
+        if (this._discoverInterval) {
+            clearInterval(this._discoverInterval);
+            this._discoverInterval = null;
+        }
+    },
+
+    reset() {
+        this.closeAll();
+        this.lastMessageTime.clear();
+        this.stopDiscovery();
+    }
+};
+
+let localGroupChanges = new Map(); // gSyncId -> timestamp for group conflict resolution
 
 // Last known remote state per peer, used for diff-based sync
 let lastKnownRemoteState = new Map(); // peerId -> Map<syncId, tabData>
@@ -121,25 +154,122 @@ let keyRotationTimers = new Map();   // peerId -> timeout ID for clearing previo
 let pendingKeyRotation = new Map();  // peerId -> { newKey, generation }
 const KEY_ROTATION_WINDOW_MS = 120000; // 2 minutes
 const AUTO_KEY_ROTATION_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-let notifiedPeers = new Set();       // peers we've already shown a connection notification for
-let notificationLog = [];            // notification log for testing
-const MAX_NOTIFICATION_LOG = 50;
-let pendingDisconnectTimers = new Map(); // peerId -> timeout ID for delayed disconnect notifications
-let disconnectNotifyDelayMs = 30000;
+// Notification state
+const notificationState = {
+    _notifiedPeers: new Set(),
+    _log: [],
+    _pendingTimers: new Map(),
+    _disconnectDelayMs: 30000,
+    _MAX_LOG: 50,
 
-// Redirect suppression
+    hasNotified(peerId) { return this._notifiedPeers.has(peerId); },
+    markNotified(peerId) { this._notifiedPeers.add(peerId); },
+    unmarkNotified(peerId) { this._notifiedPeers.delete(peerId); },
+    addLog(entry) {
+        this._log.push(entry);
+        if (this._log.length > this._MAX_LOG) {
+            this._log.shift();
+        }
+    },
+    getLog() { return this._log; },
+    getNotifiedPeers() { return Array.from(this._notifiedPeers); },
+    scheduleDisconnect(peerId, callback) {
+        this.cancelDisconnect(peerId);
+        const timerId = setTimeout(() => {
+            this._pendingTimers.delete(peerId);
+            callback();
+        }, this._disconnectDelayMs);
+        this._pendingTimers.set(peerId, timerId);
+    },
+    cancelDisconnect(peerId) {
+        const timerId = this._pendingTimers.get(peerId);
+        if (timerId != null) {
+            clearTimeout(timerId);
+            this._pendingTimers.delete(peerId);
+        }
+    },
+    setDisconnectDelay(ms) { this._disconnectDelayMs = ms; },
+    reset() {
+        this._notifiedPeers.clear();
+        this._log = [];
+        this._pendingTimers.forEach(t => clearTimeout(t));
+        this._pendingTimers.clear();
+    }
+};
+
+// URL Suppression
 // Tracks URLs recently applied by sync so that redirect-induced URL changes on the
-// receiver don't bounce back and get caught in a loop. This resolves the case where one
-// browser is logged in to a page and the other is not.
-let recentlySyncedUrls = new Map();  // syncId -> { url, at }
-let redirectSuppressionMs = 10000;    // 10s default
+// receiver don't bounce back and get caught in a loop. Also records pre-sync URLs
+// so that redirect artifacts (revert to original URL) don't propagate back.
+const urlSuppression = {
+    _recentlySynced: new Map(),   // sId -> { url, at }
+    _preSyncUrls: new Map(),      // sId -> { preSyncUrl, appliedUrl, at }
+    _suppressionMs: 10000,
+    _REVERT_WINDOW_MS: 30000,
 
-// Pre-sync URL revert suppression
-// Before sync applies a new URL to a local tab, records the tab's current URL.
-// If the tab later reverts to that pre-sync URL (redirect artifact), the
-// broadcast is suppressed so the revert doesn't propagate back to the originator.
-let preSyncUrls = new Map();  // syncId -> { preSyncUrl, appliedUrl, at }
-const PRE_SYNC_REVERT_WINDOW_MS = 30000;
+    // After tabs.create or tabs.update with URL
+    recordSyncedUrl(sId, url) {
+        this._recentlySynced.set(sId, { url, at: Date.now() });
+    },
+
+    // Before tabs.update changes a URL
+    recordPreSyncUrl(sId, preSyncUrl, appliedUrl) {
+        this._preSyncUrls.set(sId, { preSyncUrl, appliedUrl, at: Date.now() });
+    },
+
+    // tabs.onUpdated: returns { suppressed, reason }
+    shouldSuppressBroadcast(sId, url) {
+        const now = Date.now();
+        const recent = this._recentlySynced.get(sId);
+        if (recent) {
+            if ((now - recent.at) < this._suppressionMs) {
+                return { suppressed: true, reason: 'recent-sync' };
+            }
+            this._recentlySynced.delete(sId);
+        }
+        const pre = this._preSyncUrls.get(sId);
+        if (pre && (now - pre.at) < this._REVERT_WINDOW_MS) {
+            if (normalizeUrl(url) === pre.preSyncUrl) {
+                return { suppressed: true, reason: 'pre-sync-revert' };
+            }
+        } else if (pre) {
+            this._preSyncUrls.delete(sId);
+        }
+        return { suppressed: false };
+    },
+
+    // captureLocalState: returns override URL or null
+    getCaptureOverride(sId, currentUrl) {
+        const pre = this._preSyncUrls.get(sId);
+        if (pre && (Date.now() - pre.at) < this._REVERT_WINDOW_MS) {
+            if (normalizeUrl(currentUrl) === pre.preSyncUrl) {
+                return pre.appliedUrl;
+            }
+        } else if (pre) {
+            this._preSyncUrls.delete(sId);
+        }
+        return null;
+    },
+
+    // webNavigation.onCommitted: clears suppression for user nav
+    clearForUserNav(sId, url) {
+        const pre = this._preSyncUrls.get(sId);
+        if (pre && normalizeUrl(url) === pre.preSyncUrl) {
+            this._preSyncUrls.delete(sId);
+            return true;
+        }
+        return false;
+    },
+
+    // Test helper
+    setSuppressionWindow(ms) { this._suppressionMs = ms; },
+
+    // simulateRestart / fullSystemRefresh
+    reset() {
+        this._recentlySynced.clear();
+        this._preSyncUrls.clear();
+    }
+};
 
 // Tab/Group sync ID mappings (bidirectional)
 let tabSyncIds = new BiMap();    // tabId <-> syncId
@@ -151,6 +281,32 @@ function clearGroupState() {
     groupSyncIds.clear();
     lastSeenGroupProps.clear();
     localGroupChanges.clear();
+}
+
+// Resets all in-memory state. Used by simulateRestart and fullSystemRefresh.
+// opts.includeAuth: also clears auth/encryption state and syncedPeers.
+function resetAllState(opts = {}) {
+    connectionState.reset();
+    urlSuppression.reset();
+    notificationState.reset();
+    pendingSyncQueue = [];
+    tabSyncIds.clear();
+    clearGroupState();
+    offlineTombstones.clear();
+    lastKnownRemoteState.clear();
+    lastRemoteSyncTime.clear();
+    syncHistory = [];
+    broadcastStats = { attempted: 0, completed: 0, deferred: 0 };
+    if (opts.includeAuth) {
+        syncedPeers.clear();
+        authenticatedPeers.clear();
+        encryptionKeyCache.clear();
+        previousKeyCache.clear();
+        keyRotationTimers.forEach(t => clearTimeout(t));
+        keyRotationTimers.clear();
+        pendingKeyRotation.clear();
+        syncCounter = 0;
+    }
 }
 
 // Logging
@@ -201,9 +357,9 @@ console.log(`[BOOT] Tab Mirror (PeerJS WebRTC). ID: ${myDeviceId || '(loading...
 window.diag = async () => {
     console.log('--- Tab Mirror Diagnostics ---');
     console.log('ID:', myDeviceId);
-    console.log('Connections:', Array.from(connections.keys()));
-    console.log('Pending Dials:', Array.from(pendingDials));
-    console.log('Retry States:', Array.from(connectionRetries.entries()));
+    console.log('Connections:', Array.from(connectionState.connections.keys()));
+    console.log('Pending Dials:', Array.from(connectionState.pendingDials));
+    console.log('Retry States:', Array.from(connectionState.retries.entries()));
     console.log('P2P Server:', !!(window.peer && !window.peer.disconnected));
     console.log('Tab Map Size:', tabSyncIds.size);
     console.log('Group Map Size:', groupSyncIds.size);
@@ -213,7 +369,7 @@ window.diag = async () => {
     if (!TEST_MODE) {
         console.log('Paired Devices:', pairedDevices.length);
         pairedDevices.forEach(d => {
-            const connected = connections.has(d.peerId);
+            const connected = connectionState.connections.has(d.peerId);
             console.log(`  - ${d.peerId}: ${connected ? 'connected' : 'offline'} (paired ${new Date(d.pairedAt).toISOString()})`);
         });
     }
@@ -234,8 +390,8 @@ window.forceSync = () => {
 
 window.forceConnect = (remoteId) => {
     console.log(`[MANUAL] Forcing connection to ${remoteId}...`);
-    connectionRetries.delete(remoteId);
-    pendingDials.delete(remoteId);
+    connectionState.retries.delete(remoteId);
+    connectionState.pendingDials.delete(remoteId);
     dialPeer(remoteId);
 };
 
@@ -397,5 +553,9 @@ function validateRemoteState(remoteState) {
 }
 
 if (typeof module !== 'undefined') {
-    module.exports = { isPrivilegedUrl, isSyncableUrl, normalizeUrl, isAllowedUrlScheme, generateSyncId, validateTabData, validateRemoteState };
+    module.exports = {
+        isPrivilegedUrl, isSyncableUrl, normalizeUrl, isAllowedUrlScheme,
+        generateSyncId, validateTabData, validateRemoteState,
+        urlSuppression, notificationState, connectionState, resetAllState
+    };
 }
