@@ -76,6 +76,29 @@ browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     }
 });
 
+// Prevent suppression of redirects on user navication prior to tabs.onUpdated.
+browser.webNavigation.onCommitted.addListener((details) => {
+    if (details.frameId !== 0) {
+        return;
+    }
+    const qualifiers = details.transitionQualifiers || [];
+    // Only include user-initiated actions (i.e. not "link".)
+    const isUserInitiated =
+        qualifiers.includes('forward_back') ||
+        details.transitionType === 'typed';
+    if (isUserInitiated) {
+        const sId = tabSyncIds.getByA(details.tabId);
+        if (sId) {
+            const pre = preSyncUrls.get(sId);
+            if (pre && normalizeUrl(details.url) === pre.preSyncUrl) {
+                console.log(`[NAV] User-initiated navigation to pre-sync URL for ${sId}, clearing suppression`);
+                fileLog(`User navigation cleared preSyncUrl suppression for ${sId}`, 'SYNC');
+                preSyncUrls.delete(sId);
+            }
+        }
+    }
+});
+
 browser.tabs.onMoved.addListener((tabId, moveInfo) => {
     if (isProcessingRemote) {
         return;

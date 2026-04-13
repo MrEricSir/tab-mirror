@@ -345,6 +345,110 @@ async function testLegitimateUrlChangeNotSuppressed(browserA, browserB) {
   results.pass('Legitimate URL Change Not Suppressed');
 }
 
+/**
+ * Back button on mirrored tab should propagate, not be suppressed.
+ * A navigates URL1 -> URL2, B mirrors URL2. User presses back on B.
+ * B goes to URL1. This is user-initiated (forward_back transition), so
+ * preSyncUrl suppression should NOT block it. A should receive URL1.
+ */
+async function testBackButtonOnMirrorPropagates(browserA, browserB) {
+  console.log();
+  console.log('Test: Back Button on Mirror Propagates');
+
+  const url1 = generateTestUrl('back-initial');
+  const url2 = generateTestUrl('back-navigated');
+
+  // A creates tab at URL1
+  console.log('  Creating tab on A at URL1');
+  const tab = await browserA.testBridge.createTab(url1);
+  await browserA.testBridge.waitForTabLoad(tab.id);
+
+  // Sync to B
+  await browserA.testBridge.waitForSyncComplete(10000);
+  const mirrorResult = await browserB.testBridge.waitForTabUrl('back-initial', 20000);
+  await Assert.isTrue(!!mirrorResult, 'B should mirror URL1');
+  await browserB.testBridge.waitForSyncComplete(10000);
+
+  // Let echo settle
+  await browserA.testBridge.triggerSync();
+  await browserB.testBridge.triggerSync();
+  await sleep(2000);
+  await browserA.testBridge.waitForSyncComplete(10000);
+
+  // A navigates to URL2 (creates browser history: URL1 -> URL2)
+  console.log('  Navigating A to URL2');
+  await browserA.testBridge.updateTab(tab.id, { url: url2 });
+  await browserA.testBridge.waitForTabLoad(tab.id);
+
+  // Wait for URL2 to propagate to B
+  await browserA.testBridge.waitForSyncComplete(10000);
+  const mirrorUpdate = await browserB.testBridge.waitForTabUrl('back-navigated', 20000);
+  await Assert.isTrue(!!mirrorUpdate, 'B should mirror URL2');
+  await browserB.testBridge.waitForSyncComplete(10000);
+  await browserA.testBridge.waitForSyncComplete(10000);
+
+  // Let echo settle fully
+  await browserA.testBridge.triggerSync();
+  await browserB.testBridge.triggerSync();
+  await sleep(2000);
+  await browserA.testBridge.waitForSyncComplete(10000);
+
+  // Find B's mirror tab WebDriver handle by switching tabs and checking URL
+  const tabsB = await browserB.testBridge.getTabs();
+  const mirrorTab = tabsB.find(t => t.url && t.url.includes('back-navigated'));
+  await Assert.isTrue(!!mirrorTab, 'B should have mirror tab at URL2');
+  console.log(`  B mirror tab id: ${mirrorTab.id}`);
+
+  // Disable redirect suppression so any URL change broadcasts immediately
+  await browserB.testBridge.setRedirectSuppressionWindow(0);
+
+  // Switch WebDriver to B's mirror tab and press back
+  const allHandles = await browserB.driver.getAllWindowHandles();
+  const originalHandle = await browserB.driver.getWindowHandle();
+  let mirrorHandle = null;
+
+  for (const handle of allHandles) {
+    await browserB.driver.switchTo().window(handle);
+    const currentUrl = await browserB.driver.getCurrentUrl();
+    if (currentUrl.includes('back-navigated')) {
+      mirrorHandle = handle;
+      break;
+    }
+  }
+
+  if (!mirrorHandle) {
+    // Mirror tab might be in same window but different tab - try tab handles
+    // Fall back to switching within the sync window
+    await browserB.driver.switchTo().window(originalHandle);
+  }
+
+  await Assert.isTrue(!!mirrorHandle, 'Should find WebDriver handle for mirror tab');
+  console.log('  Pressing back button on B mirror tab');
+  await browserB.driver.navigate().back();
+  await sleep(1000);
+
+  // Switch back to test bridge tab
+  await browserB.driver.switchTo().window(originalHandle);
+
+  // Force sync from B to A
+  await browserB.testBridge.triggerSync();
+  await sleep(2000);
+  await browserA.testBridge.waitForSyncComplete(10000);
+
+  // A should receive URL1 (back navigation was NOT suppressed)
+  const aTab = await browserA.testBridge.waitForTabUrl('back-initial', 20000);
+  console.log(`  A received back-navigation URL: ${aTab ? aTab.url : 'NOT FOUND'}`);
+  await Assert.isTrue(
+    !!aTab,
+    'A should receive URL1 (back button navigation propagates through)'
+  );
+
+  // Reset redirect suppression
+  await browserB.testBridge.setRedirectSuppressionWindow(10000);
+
+  results.pass('Back Button on Mirror Propagates');
+}
+
 async function main() {
   console.log('='.repeat(60));
   console.log('SYNC ECHO / LOOP PREVENTION TESTS');
@@ -370,6 +474,7 @@ async function main() {
       testTwoInstanceNoEcho,
       testRedirectBounceDoesNotRevertOriginator,
       testLegitimateUrlChangeNotSuppressed,
+      testBackButtonOnMirrorPropagates,
     ];
 
     for (const test of twoInstanceTests) {
