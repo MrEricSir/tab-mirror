@@ -350,9 +350,8 @@ describe('connectionState', () => {
     });
 
     describe('stopDiscovery', () => {
-        test('clears interval and sets to null', (t) => {
-            t.mock.timers.enable({ apis: ['setInterval'] });
-            connectionState._discoverInterval = setInterval(() => {}, 1000);
+        test('clears interval and sets to null', () => {
+            connectionState._discoverInterval = setInterval(() => {}, 100000);
             connectionState.stopDiscovery();
             assert.equal(connectionState._discoverInterval, null);
         });
@@ -364,12 +363,11 @@ describe('connectionState', () => {
     });
 
     describe('reset', () => {
-        test('calls closeAll, clears lastMessageTime, and stops discovery', (t) => {
-            t.mock.timers.enable({ apis: ['setInterval'] });
+        test('calls closeAll, clears lastMessageTime, and stops discovery', () => {
             const closeFn = mock.fn();
             connectionState.connections.set('peer1', { close: closeFn });
             connectionState.lastMessageTime.set('peer1', Date.now());
-            connectionState._discoverInterval = setInterval(() => {}, 1000);
+            connectionState._discoverInterval = setInterval(() => {}, 100000);
 
             connectionState.reset();
 
