@@ -178,8 +178,8 @@ async function updatePairedDevices() {
     try {
         const container = document.getElementById('pairedDevicesList');
 
-        // Skip re-render while an unpair confirm is showing
-        if (container.querySelector('.unpair-confirm')) {
+        // Skip re-render while user is interacting (confirm dialog or hover)
+        if (container.querySelector('.unpair-confirm') || container.matches(':hover')) {
             return;
         }
 
