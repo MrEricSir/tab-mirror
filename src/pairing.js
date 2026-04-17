@@ -322,9 +322,28 @@ function acceptConnection(conn) {
     authenticatedPeers.add(conn.peer);
     connectionState.lastMessageTime.set(conn.peer, Date.now());
 
+    const peerRateLimit = { tokens: 10, lastRefill: Date.now() };
+    const MAX_TOKENS = 10;
+    const REFILL_RATE = 5; // tokens per second
+
     conn.on('data', async (data) => {
+        // Rate limit
+        const now = Date.now();
+        const elapsed = (now - peerRateLimit.lastRefill) / 1000;
+        peerRateLimit.tokens = Math.min(MAX_TOKENS, peerRateLimit.tokens + elapsed * REFILL_RATE);
+        peerRateLimit.lastRefill = now;
+        if (peerRateLimit.tokens < 1) {
+            return; // Drop message silently
+        }
+        peerRateLimit.tokens--;
+
         connectionState.lastMessageTime.set(conn.peer, Date.now());
         if (data && data.type === 'MIRROR_SYNC_ENCRYPTED') {
+            // Reject oversized payloads before decryption
+            if (data.ciphertext && data.ciphertext.length > MAX_ENCRYPTED_PAYLOAD_LENGTH) {
+                fileLog(`Rejected oversized payload from ${conn.peer}: ${data.ciphertext.length} chars`, 'SECURITY');
+                return;
+            }
             const encKey = await getOrDeriveEncryptionKey(conn.peer);
             let decrypted = null;
             if (encKey) {

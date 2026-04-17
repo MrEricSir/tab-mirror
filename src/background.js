@@ -46,6 +46,7 @@ const MAX_GROUP_TITLE_LENGTH = 256;
 const INDEX_MATCH_TOLERANCE = 3;
 const MAX_REMOTE_TABS = 500;
 const MAX_REMOTE_GROUPS = 100;
+const MAX_ENCRYPTED_PAYLOAD_LENGTH = 8_000_000; // ~6MB raw, well above legitimate max
 const MAX_PEER_ID_LENGTH = 128;
 const VALID_GROUP_COLORS = new Set(['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange']);
 

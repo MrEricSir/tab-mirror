@@ -14,8 +14,16 @@ async function computeHMAC(base64Key, message) {
 }
 
 async function verifyHMAC(base64Key, message, hexSignature) {
-    const expected = await computeHMAC(base64Key, message);
-    return expected === hexSignature;
+    const keyBytes = Uint8Array.from(atob(base64Key), c => c.charCodeAt(0));
+    const key = await crypto.subtle.importKey(
+        'raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
+    );
+    const sigBytes = new Uint8Array(
+        hexSignature.match(/.{2}/g).map(b => parseInt(b, 16))
+    );
+    return crypto.subtle.verify(
+        'HMAC', key, sigBytes, new TextEncoder().encode(message)
+    );
 }
 
 // E2E Encryption (AES-256-GCM)

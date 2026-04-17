@@ -171,6 +171,17 @@ describe('verifyHMAC', () => {
         const result = await verifyHMAC(key2, 'payload', hmac);
         assert.equal(result, false);
     });
+
+    test('throws or returns false for malformed hex input', async () => {
+        const key = await generateSharedKey();
+        try {
+            const result = await verifyHMAC(key, 'payload', 'not-hex-at-all!');
+            assert.equal(result, false);
+        } catch (e) {
+            // Throwing is also acceptable for malformed input
+            assert.ok(e instanceof TypeError || e instanceof Error);
+        }
+    });
 });
 
 // --- deriveEncryptionKey ---

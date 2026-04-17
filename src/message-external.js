@@ -3,6 +3,9 @@
 // inter-extension communication.
 
 browser.runtime.onMessageExternal.addListener(async (message, sender) => {
+    if (!TEST_MODE) {
+        return;
+    }
     try {
         switch (message.action) {
             case 'getState':
